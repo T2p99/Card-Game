@@ -98,7 +98,12 @@ namespace CardGame.Core
         public string SetCode = string.Empty;
         public string CollectorNumber = string.Empty;
         public string DataSource = string.Empty;
+        public int DatabaseMediaId;
+        public bool HasDatabaseVideo;
         public CardImplementationStatus ImplementationStatus = CardImplementationStatus.DataOnly;
+
+        public string DatabaseImageUrl => CardMediaCatalog.ImageUrl(DatabaseMediaId);
+        public string DatabaseVideoUrl => HasDatabaseVideo ? CardMediaCatalog.VideoUrl(DatabaseMediaId) : string.Empty;
 
         public bool IsCreature => Type == CardType.Creature || Type == CardType.EvolutionCreature;
 
