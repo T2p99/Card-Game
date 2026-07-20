@@ -15,6 +15,7 @@ namespace CardGame.Presentation
         private const int ComputerId = 1;
         private readonly Dictionary<string, Texture2D> _cardArt = new Dictionary<string, Texture2D>();
         private readonly HashSet<string> _artRequests = new HashSet<string>();
+        private readonly HashSet<long> _selectedManaIds = new HashSet<long>();
 
         private RulesEngine _engine;
         private GameState _state;
@@ -24,11 +25,15 @@ namespace CardGame.Presentation
         private Vector2 _handScroll;
         private Vector2 _humanBattleScroll;
         private Vector2 _computerBattleScroll;
+        private Vector2 _manaSelectionScroll;
         private string _message = "Choose a card, charge mana, and summon a creature.";
+        private string _viewerMessage = string.Empty;
         private bool _busy;
         private bool _awaitingHumanBlock;
         private bool _showVideo;
         private bool _animationsEnabled = true;
+        private bool _showHandCardViewer;
+        private bool _selectingManaPayment;
         private VideoPlayer _videoPlayer;
         private RenderTexture _videoTexture;
         private float _uiWidth;
@@ -119,6 +124,7 @@ namespace CardGame.Presentation
             DrawBoard();
             DrawControlPanel();
 
+            if (_showHandCardViewer) DrawHandCardViewer();
             if (_showVideo) DrawVideoOverlay();
             if (_state.IsFinished) DrawWinnerOverlay();
             GUI.matrix = previousMatrix;
@@ -178,8 +184,7 @@ namespace CardGame.Presentation
                 {
                     if (!_busy && _state.ActivePlayerId == HumanId)
                     {
-                        _selectedHand = card;
-                        _selectedCreature = null;
+                        OpenHandCardViewer(card);
                     }
                 }, _selectedHand, false, "Your Hand");
         }
@@ -325,9 +330,7 @@ namespace CardGame.Presentation
             GUI.enabled = !_busy && !_state.IsFinished && _state.ActivePlayerId == HumanId;
             if (_selectedHand != null)
             {
-                if (GUILayout.Button("Charge as Mana", GUILayout.Height(34))) ChargeSelected();
-                if (GUILayout.Button(_selectedHand.Definition.Type == CardType.Spell ? "Cast Spell" : "Summon Creature", GUILayout.Height(34)))
-                    PlaySelected();
+                if (GUILayout.Button("Open Selected Card", GUILayout.Height(38))) _showHandCardViewer = true;
             }
             if (_selectedCreature != null && GUILayout.Button("Attack Player", GUILayout.Height(38)))
                 StartHumanAttack(AttackTargetKind.Player, 0);
@@ -357,27 +360,186 @@ namespace CardGame.Presentation
             }
 
             GUILayout.FlexibleSpace();
-            GUILayout.Label("Prototype: automatic mana payment and spell targeting are enabled.");
+            GUILayout.Label("Prototype: hand cards use manual mana selection. Spell targeting is currently automatic.");
             GUILayout.EndArea();
         }
 
-        private void ChargeSelected()
+        private void OpenHandCardViewer(CardInstance card)
         {
-            var result = _engine.ChargeMana(_state, HumanId, _selectedHand.InstanceId);
-            ShowResult(result, result.Success ? $"Charged {_selectedHand.Definition.Name} as mana." : null);
-            if (result.Success) _selectedHand = null;
+            _selectedHand = card;
+            _selectedCreature = null;
+            _selectedOpponentCreature = null;
+            _showHandCardViewer = true;
+            _selectingManaPayment = false;
+            _selectedManaIds.Clear();
+            _viewerMessage = string.Empty;
         }
 
-        private void PlaySelected()
+        private void CloseHandCardViewer()
         {
-            var card = _selectedHand;
-            var payment = SelectPayment(_state.Players[HumanId], card.Definition);
-            if (payment.Count != card.Definition.Cost)
+            _showHandCardViewer = false;
+            _selectingManaPayment = false;
+            _selectedManaIds.Clear();
+            _viewerMessage = string.Empty;
+        }
+
+        private void NavigateHand(int direction)
+        {
+            var hand = _state.Players[HumanId].Hand;
+            if (hand.Count == 0)
             {
-                _message = "Not enough usable mana, including a matching civilization.";
+                CloseHandCardViewer();
                 return;
             }
 
+            var currentIndex = hand.IndexOf(_selectedHand);
+            if (currentIndex < 0) currentIndex = 0;
+            var nextIndex = (currentIndex + direction + hand.Count) % hand.Count;
+            _selectedHand = hand[nextIndex];
+            _selectingManaPayment = false;
+            _selectedManaIds.Clear();
+            _viewerMessage = string.Empty;
+        }
+
+        private void DrawHandCardViewer()
+        {
+            var hand = _state.Players[HumanId].Hand;
+            if (_selectedHand == null || !hand.Contains(_selectedHand))
+            {
+                CloseHandCardViewer();
+                return;
+            }
+
+            GUI.color = new Color(0f, 0f, 0f, 0.86f);
+            GUI.Box(new Rect(0, 0, _uiWidth, _uiHeight), GUIContent.none);
+            GUI.color = Color.white;
+
+            var panel = new Rect(55f, 38f, _uiWidth - 110f, _uiHeight - 76f);
+            GUI.backgroundColor = new Color(0.12f, 0.15f, 0.20f);
+            GUI.Box(panel, GUIContent.none);
+
+            if (GUI.Button(new Rect(panel.xMax - 52f, panel.y + 12f, 38f, 38f), "X"))
+            {
+                CloseHandCardViewer();
+                return;
+            }
+
+            var imageHeight = panel.height - 120f;
+            var imageWidth = Mathf.Min(imageHeight * 0.715f, panel.width * 0.42f);
+            var imageRect = new Rect(panel.x + 78f, panel.y + 66f, imageWidth, imageHeight);
+            GUI.backgroundColor = CivilizationColor(_selectedHand.Definition);
+            GUI.Box(new Rect(imageRect.x - 6f, imageRect.y - 6f, imageRect.width + 12f, imageRect.height + 12f), GUIContent.none);
+            if (_cardArt.TryGetValue(_selectedHand.Definition.Id, out var texture))
+                GUI.DrawTexture(imageRect, texture, ScaleMode.ScaleToFit);
+            else
+                GUI.Box(imageRect, _selectedHand.Definition.Name);
+
+            var previousFontSize = GUI.skin.button.fontSize;
+            GUI.skin.button.fontSize = 34;
+            if (GUI.Button(new Rect(panel.x + 14f, panel.center.y - 38f, 52f, 76f), "◀")) NavigateHand(-1);
+            if (GUI.Button(new Rect(imageRect.xMax + 12f, panel.center.y - 38f, 52f, 76f), "▶")) NavigateHand(1);
+            GUI.skin.button.fontSize = previousFontSize;
+
+            var index = hand.IndexOf(_selectedHand) + 1;
+            GUI.Label(new Rect(imageRect.x, panel.y + 18f, imageRect.width, 30f), $"Card {index} of {hand.Count}");
+
+            var infoX = imageRect.xMax + 82f;
+            var infoRect = new Rect(infoX, panel.y + 62f, panel.xMax - infoX - 24f, panel.height - 82f);
+            var titleStyle = new GUIStyle(GUI.skin.label) { fontSize = 28, fontStyle = FontStyle.Bold, wordWrap = true };
+            var bodyStyle = new GUIStyle(GUI.skin.label) { fontSize = 18, wordWrap = true };
+            GUI.Label(new Rect(infoRect.x, infoRect.y, infoRect.width, 72f), _selectedHand.Definition.Name, titleStyle);
+            GUI.Label(new Rect(infoRect.x, infoRect.y + 78f, infoRect.width, 58f),
+                $"Cost: {_selectedHand.Definition.Cost}     Type: {_selectedHand.Definition.Type}\n" +
+                $"Civilization: {string.Join(", ", _selectedHand.Definition.Civilizations)}" +
+                (_selectedHand.Definition.IsCreature ? $"     Power: {_selectedHand.Definition.Power}" : string.Empty), bodyStyle);
+            GUI.Label(new Rect(infoRect.x, infoRect.y + 142f, infoRect.width, 118f),
+                string.IsNullOrWhiteSpace(_selectedHand.Definition.RulesText)
+                    ? "This card has no printed ability."
+                    : _selectedHand.Definition.RulesText, bodyStyle);
+
+            if (!string.IsNullOrEmpty(_viewerMessage))
+            {
+                var messageStyle = new GUIStyle(bodyStyle);
+                messageStyle.normal.textColor = new Color(1f, 0.72f, 0.25f);
+                GUI.Label(new Rect(infoRect.x, infoRect.y + 258f, infoRect.width, 54f), _viewerMessage, messageStyle);
+            }
+
+            if (_selectingManaPayment)
+            {
+                DrawManaPaymentSelector(new Rect(infoRect.x, infoRect.y + 314f, infoRect.width, infoRect.height - 314f));
+            }
+            else
+            {
+                var canAct = !_busy && !_state.IsFinished && _state.ActivePlayerId == HumanId;
+                GUI.enabled = canAct;
+                if (GUI.Button(new Rect(infoRect.x, infoRect.yMax - 74f, infoRect.width * 0.47f, 58f), "Mana Zone"))
+                    ChargeSelected();
+                if (GUI.Button(new Rect(infoRect.x + infoRect.width * 0.53f, infoRect.yMax - 74f, infoRect.width * 0.47f, 58f), "Battle Zone"))
+                    BeginManaPayment();
+                GUI.enabled = true;
+            }
+        }
+
+        private void BeginManaPayment()
+        {
+            _selectedManaIds.Clear();
+            _selectingManaPayment = true;
+            _viewerMessage = _selectedHand.Definition.Cost == 0
+                ? "This card costs no mana. Confirm to play it."
+                : $"Select exactly {_selectedHand.Definition.Cost} untapped mana cards to turn.";
+        }
+
+        private void DrawManaPaymentSelector(Rect area)
+        {
+            var player = _state.Players[HumanId];
+            var cost = _selectedHand.Definition.Cost;
+            GUI.Label(new Rect(area.x, area.y, area.width, 28f),
+                $"Mana selected: {_selectedManaIds.Count} / {cost}. At least one must match the card's civilization.");
+
+            var viewport = new Rect(area.x, area.y + 32f, area.width, Mathf.Max(80f, area.height - 100f));
+            GUI.Box(viewport, GUIContent.none);
+            var cardHeight = Mathf.Min(132f, viewport.height - 22f);
+            var cardWidth = cardHeight * 0.66f;
+            var content = new Rect(0, 0, Mathf.Max(viewport.width - 18f, player.Mana.Count * (cardWidth + 10f)), cardHeight + 4f);
+            _manaSelectionScroll = GUI.BeginScrollView(viewport, _manaSelectionScroll, content);
+            for (var i = 0; i < player.Mana.Count; i++)
+            {
+                var mana = player.Mana[i];
+                var selected = _selectedManaIds.Contains(mana.InstanceId);
+                var rect = new Rect(i * (cardWidth + 10f), 0, cardWidth, cardHeight);
+                GUI.enabled = !mana.Tapped;
+                DrawCardButton(mana, rect, selected, false, () =>
+                {
+                    if (!_selectedManaIds.Add(mana.InstanceId)) _selectedManaIds.Remove(mana.InstanceId);
+                    _viewerMessage = $"Selected {_selectedManaIds.Count} of {cost} mana cards.";
+                });
+                GUI.enabled = true;
+                if (selected)
+                {
+                    GUI.color = new Color(1f, 0.76f, 0.12f);
+                    GUI.Box(new Rect(rect.x + 4f, rect.y + rect.height - 28f, rect.width - 8f, 24f), "TURN");
+                    GUI.color = Color.white;
+                }
+            }
+            GUI.EndScrollView();
+
+            var confirmEnabled = _selectedManaIds.Count == cost;
+            GUI.enabled = confirmEnabled;
+            if (GUI.Button(new Rect(area.x, area.yMax - 56f, area.width * 0.62f, 48f), $"Confirm — Turn {cost} Mana"))
+                ConfirmManualPlay();
+            GUI.enabled = true;
+            if (GUI.Button(new Rect(area.x + area.width * 0.66f, area.yMax - 56f, area.width * 0.34f, 48f), "Back"))
+            {
+                _selectingManaPayment = false;
+                _selectedManaIds.Clear();
+                _viewerMessage = string.Empty;
+            }
+        }
+
+        private void ConfirmManualPlay()
+        {
+            var card = _selectedHand;
+            var payment = _selectedManaIds.ToArray();
             RuleResult result;
             if (card.Definition.Type == CardType.Spell)
                 result = TryCastSpell(HumanId, card, payment, _selectedOpponentCreature?.InstanceId ?? 0);
@@ -385,7 +547,29 @@ namespace CardGame.Presentation
                 result = _engine.SummonCreature(_state, HumanId, card.InstanceId, payment);
 
             ShowResult(result, result.Success ? $"Played {card.Definition.Name}." : null);
-            if (result.Success) _selectedHand = null;
+            if (!result.Success)
+            {
+                _viewerMessage = result.Error;
+                return;
+            }
+
+            _selectedHand = null;
+            CloseHandCardViewer();
+        }
+
+        private void ChargeSelected()
+        {
+            var card = _selectedHand;
+            var result = _engine.ChargeMana(_state, HumanId, card.InstanceId);
+            ShowResult(result, result.Success ? $"Charged {card.Definition.Name} as mana." : null);
+            if (!result.Success)
+            {
+                _viewerMessage = result.Error;
+                return;
+            }
+
+            _selectedHand = null;
+            CloseHandCardViewer();
         }
 
         private RuleResult TryCastSpell(int playerId, CardInstance spell, IReadOnlyCollection<long> payment, long preferredTarget)
@@ -435,6 +619,7 @@ namespace CardGame.Presentation
 
         private void EndHumanTurn()
         {
+            CloseHandCardViewer();
             var result = _engine.EndTurn(_state, HumanId);
             ShowResult(result, result.Success ? "Computer is thinking…" : null);
             if (!result.Success) return;
