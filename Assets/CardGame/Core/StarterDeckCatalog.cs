@@ -115,27 +115,37 @@ namespace CardGame.Core
             Add(cards, C("dm01-065", "Wandering Braineater", Civilization.Darkness, 2, CardType.Creature, "Living Dead", 2000, "DM-01", "65/110"));
             Add(cards, C("dm01-066", "Writhing Bone Ghoul", Civilization.Darkness, 2, CardType.Creature, "Living Dead", 2000, "DM-01", "66/110"));
 
-            Configure(cards, "dm01-070", "Power attacker +2000.", CardImplementationStatus.CoreKeywords,
+            Configure(cards, "dm01-070", "Power attacker +2000.", CardImplementationStatus.Complete,
                 new KeywordAbility(CardKeyword.PowerAttacker, 2000));
-            Configure(cards, "dm01-074", "Must attack each turn if able.", CardImplementationStatus.CoreKeywords,
+            Configure(cards, "dm01-074", "Must attack each turn if able.", CardImplementationStatus.Complete,
                 new KeywordAbility(CardKeyword.MustAttackIfAble));
-            Configure(cards, "dm01-075", "Must attack each turn if able.", CardImplementationStatus.CoreKeywords,
+            Configure(cards, "dm01-075", "Must attack each turn if able.", CardImplementationStatus.Complete,
                 new KeywordAbility(CardKeyword.MustAttackIfAble));
             Configure(cards, "dm01-080", "No abilities.", CardImplementationStatus.Complete);
 
-            Configure(cards, "dm02-034", "Evolves from a Human; gains attack power for each other Human.", CardImplementationStatus.DataOnly);
-            Configure(cards, "dm01-067", "Gains +2000 power while attacking if you control a Human.", CardImplementationStatus.DataOnly);
+            Configure(cards, "dm02-034", "Evolution—Put on one of your Humans. While attacking, gets +2000 power for each other Human in your battle zone.", CardImplementationStatus.Complete);
+            cards["dm02-034"].EvolutionRace = "Human";
+            Configure(cards, "dm01-067", "While you have at least 1 Human in the battle zone, this creature gets +2000 power during its attacks.", CardImplementationStatus.Complete);
             Configure(cards, "dm01-071", "One of your creatures gains power attacker +2000 for the turn.", CardImplementationStatus.DataOnly);
             Configure(cards, "dm01-073", "Destroy an opposing creature with power 2000 or less.", CardImplementationStatus.DataOnly);
-            Configure(cards, "dm02-039", "While attacking, gains +2000 power per other tapped creature you control.", CardImplementationStatus.DataOnly);
-            Configure(cards, "dm01-077", "Gains +2000 power while attacking if you control an Armorloid.", CardImplementationStatus.DataOnly);
-            Configure(cards, "dm02-041", "When it is your only creature, gains power attacker +4000 and double breaker.", CardImplementationStatus.DataOnly);
+            Configure(cards, "dm02-039", "While attacking, gets +2000 power for each other tapped creature you have in the battle zone.", CardImplementationStatus.Complete);
+            Configure(cards, "dm01-077", "While you have at least 1 Armorloid in the battle zone, this creature gets +2000 power during its attacks.", CardImplementationStatus.Complete);
+            Configure(cards, "dm02-041", "While you have no other creatures in the battle zone, this creature gets power attacker +4000 and double breaker.", CardImplementationStatus.Complete);
             Configure(cards, "dm01-081", "One of your creatures gains power attacker +4000 and double breaker for the turn.", CardImplementationStatus.DataOnly);
             Configure(cards, "dm01-088", "Shield trigger; destroy an opposing creature with power 4000 or less.", CardImplementationStatus.Complete,
                 new KeywordAbility(CardKeyword.ShieldTrigger));
+            Configure(cards, "dm01-082", "When you put this creature into the battle zone, destroy one of your opponent's creatures that has power 2000 or less.", CardImplementationStatus.Complete);
+            Configure(cards, "dm01-085", "When you put this creature into the battle zone, destroy one of your creatures. Then your opponent destroys one of their creatures.", CardImplementationStatus.Complete);
+            Configure(cards, "dm01-086", "Power attacker +2000.", CardImplementationStatus.Complete,
+                new KeywordAbility(CardKeyword.PowerAttacker, 2000));
+            Configure(cards, "dm01-087", "Power attacker +4000.", CardImplementationStatus.Complete,
+                new KeywordAbility(CardKeyword.PowerAttacker, 4000));
+            Configure(cards, "dm02-043", "Must attack each turn if able. Power attacker +1000.", CardImplementationStatus.Complete,
+                new KeywordAbility(CardKeyword.MustAttackIfAble),
+                new KeywordAbility(CardKeyword.PowerAttacker, 1000));
 
-            Configure(cards, "dm02-023", "When it attacks, you may return a creature from your graveyard to your hand.", CardImplementationStatus.DataOnly);
-            Configure(cards, "dm01-046", "Blocker; cannot attack; destroy it after it battles.", CardImplementationStatus.CoreKeywords,
+            Configure(cards, "dm02-023", "Whenever this creature attacks, you may return a creature from your graveyard to your hand.", CardImplementationStatus.Complete);
+            Configure(cards, "dm01-046", "Blocker; cannot attack; destroy it after it wins a battle.", CardImplementationStatus.Complete,
                 new KeywordAbility(CardKeyword.Blocker),
                 new KeywordAbility(CardKeyword.CannotAttack),
                 new KeywordAbility(CardKeyword.DestroyAfterBattle));
@@ -143,13 +153,15 @@ namespace CardGame.Core
                 new KeywordAbility(CardKeyword.Slayer));
             Configure(cards, "dm01-048", "Destroy this creature after it battles.", CardImplementationStatus.Complete,
                 new KeywordAbility(CardKeyword.DestroyAfterBattle));
-            Configure(cards, "dm02-024", "Evolves from a Parasite Worm; may destroy an opposing creature when summoned.", CardImplementationStatus.DataOnly);
+            Configure(cards, "dm02-024", "Evolution—Put on one of your Parasite Worms. When put into the battle zone, you may destroy one of your opponent's creatures.", CardImplementationStatus.Complete);
+            cards["dm02-024"].EvolutionRace = "Parasite Worm";
             Configure(cards, "dm01-051", "Blocker.", CardImplementationStatus.Complete,
                 new KeywordAbility(CardKeyword.Blocker));
             Configure(cards, "dm01-052", "Shield trigger; return a creature from your graveyard to your hand.", CardImplementationStatus.DataOnly,
                 new KeywordAbility(CardKeyword.ShieldTrigger));
             Configure(cards, "dm01-053", "Destroy an opposing untapped creature.", CardImplementationStatus.DataOnly);
-            Configure(cards, "dm02-027", "When it attacks, send one of your shields to your graveyard; double breaker.", CardImplementationStatus.DataOnly);
+            Configure(cards, "dm02-027", "Whenever this creature attacks, put one of your shields into your graveyard without using its shield trigger. Double breaker.", CardImplementationStatus.Complete,
+                new KeywordAbility(CardKeyword.DoubleBreaker));
             Configure(cards, "dm01-054", "Shield trigger; your opponent discards a random card.", CardImplementationStatus.DataOnly,
                 new KeywordAbility(CardKeyword.ShieldTrigger));
             Configure(cards, "dm01-056", "Slayer.", CardImplementationStatus.Complete,
@@ -157,6 +169,23 @@ namespace CardGame.Core
             Configure(cards, "dm02-029", "Blocker; cannot attack players.", CardImplementationStatus.Complete,
                 new KeywordAbility(CardKeyword.Blocker),
                 new KeywordAbility(CardKeyword.CannotAttackPlayers));
+
+            Configure(cards, "dm01-051", "Blocker.", CardImplementationStatus.Complete,
+                new KeywordAbility(CardKeyword.Blocker));
+            Configure(cards, "dm01-058", "When you put this creature into the battle zone, your opponent discards a random card.", CardImplementationStatus.Complete);
+            Configure(cards, "dm01-060", "No abilities.", CardImplementationStatus.Complete);
+            Configure(cards, "dm01-061", "When you put this creature into the battle zone, destroy one of your creatures.", CardImplementationStatus.Complete);
+            Configure(cards, "dm01-062", "When you put this creature into the battle zone, your opponent destroys one of their creatures.", CardImplementationStatus.Complete);
+            Configure(cards, "dm01-065", "Blocker; cannot attack.", CardImplementationStatus.Complete,
+                new KeywordAbility(CardKeyword.Blocker),
+                new KeywordAbility(CardKeyword.CannotAttack));
+            Configure(cards, "dm01-066", "No abilities.", CardImplementationStatus.Complete);
+            Configure(cards, "dm02-030", "Whenever this creature attacks, your opponent discards a random card.", CardImplementationStatus.Complete);
+            Configure(cards, "dm02-032", "Blocker. When this creature attacks a player, destroy it after the attack.", CardImplementationStatus.Complete,
+                new KeywordAbility(CardKeyword.Blocker));
+            Configure(cards, "dm02-033", "When you put this creature into the battle zone, destroy one of your creatures that has power 3000 or less.", CardImplementationStatus.Complete);
+            Configure(cards, "dm02-042", "Whenever this creature attacks, you may destroy a creature in the battle zone that has blocker. Double breaker.", CardImplementationStatus.Complete,
+                new KeywordAbility(CardKeyword.DoubleBreaker));
 
             Configure(cards, "dm01-063", "Shield trigger; destroy an opposing creature.", CardImplementationStatus.Complete,
                 new KeywordAbility(CardKeyword.ShieldTrigger));
