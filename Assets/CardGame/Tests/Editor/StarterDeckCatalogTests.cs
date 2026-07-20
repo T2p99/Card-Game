@@ -56,6 +56,22 @@ namespace CardGame.Core.Tests
         }
 
         [Test]
+        public void Catalog_HasPlayableRulesForEveryStarterDeckCard()
+        {
+            var incomplete = StarterDeckCatalog.Cards.Values
+                .Where(card => card.ImplementationStatus == CardImplementationStatus.DataOnly)
+                .Select(card => card.Name)
+                .ToArray();
+
+            Assert.That(incomplete, Is.Empty,
+                $"Starter cards still marked data-only: {string.Join(", ", incomplete)}");
+            Assert.That(StarterDeckCatalog.Cards["dm01-082"].RulesText, Does.Contain("power 2000 or less"));
+            Assert.That(StarterDeckCatalog.Cards["dm01-087"].KeywordValue(CardKeyword.PowerAttacker), Is.EqualTo(4000));
+            Assert.That(StarterDeckCatalog.Cards["dm02-034"].EvolutionRace, Is.EqualTo("Human"));
+            Assert.That(StarterDeckCatalog.Cards["dm02-024"].EvolutionRace, Is.EqualTo("Parasite Worm"));
+        }
+
+        [Test]
         public void Catalog_MapsDatabaseImagesAndAttackVideos()
         {
             var brawler = StarterDeckCatalog.Cards["dm01-070"];
