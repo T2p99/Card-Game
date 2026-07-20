@@ -52,7 +52,7 @@ namespace CardGame.Core.Tests
             Assert.That(StarterDeckCatalog.Cards["dm01-080"].ImplementationStatus, Is.EqualTo(CardImplementationStatus.Complete));
             Assert.That(StarterDeckCatalog.Cards["dm01-047"].HasKeyword(CardKeyword.Slayer), Is.True);
             Assert.That(StarterDeckCatalog.Cards["dm02-029"].HasKeyword(CardKeyword.Blocker), Is.True);
-            Assert.That(StarterDeckCatalog.Cards["dm01-073"].ImplementationStatus, Is.EqualTo(CardImplementationStatus.DataOnly));
+            Assert.That(StarterDeckCatalog.Cards["dm01-073"].ImplementationStatus, Is.EqualTo(CardImplementationStatus.Complete));
         }
     }
 }
