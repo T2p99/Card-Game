@@ -17,6 +17,7 @@ namespace CardGame.Presentation
         private readonly HashSet<string> _artRequests = new HashSet<string>();
         private readonly HashSet<long> _selectedManaIds = new HashSet<long>();
         private long _selectedEvolutionBaseId;
+        private Texture2D _cardBack;
 
         private RulesEngine _engine;
         private GameState _state;
@@ -56,6 +57,16 @@ namespace CardGame.Presentation
         private void Awake()
         {
             Screen.orientation = ScreenOrientation.LandscapeLeft;
+            _cardBack = Resources.Load<Texture2D>("CardGame/UI/CardBack");
+            if (_cardBack == null)
+            {
+                var encodedCardBack = Resources.Load<TextAsset>("CardGame/UI/CardBack");
+                if (encodedCardBack != null)
+                {
+                    _cardBack = new Texture2D(2, 2, TextureFormat.RGB24, false);
+                    _cardBack.LoadImage(Convert.FromBase64String(encodedCardBack.text));
+                }
+            }
             _engine = new RulesEngine();
             _state = _engine.StartGame(
                 StarterDeckCatalog.ShobusFireDeck.Build(StarterDeckCatalog.Cards),
@@ -221,8 +232,27 @@ namespace CardGame.Presentation
                 DrawCardBack(new Rect(x + i * (cardWidth + 7f), top, cardWidth, cardHeight), string.Empty);
             }
 
-            if (!hideHand) return;
             x += Mathf.Max(5, player.Shields.Count) * (cardWidth + 7f) + 30f;
+            GUI.Label(new Rect(x, area.y + 3f, 180f, 20f), $"Graveyard ({player.Graveyard.Count})");
+            var graveyardRect = new Rect(x, top, cardWidth, cardHeight);
+            if (player.Graveyard.Count > 0)
+            {
+                GUI.backgroundColor = new Color(0.09f, 0.09f, 0.11f);
+                GUI.Box(new Rect(graveyardRect.x + 4f, graveyardRect.y - 4f, graveyardRect.width, graveyardRect.height), GUIContent.none);
+                GUI.Box(new Rect(graveyardRect.x + 2f, graveyardRect.y - 2f, graveyardRect.width, graveyardRect.height), GUIContent.none);
+                var topCard = player.Graveyard[player.Graveyard.Count - 1];
+                DrawCardButton(topCard, graveyardRect, false, false,
+                    () => OpenFaceUpCardViewer(topCard, player.Graveyard,
+                        player.PlayerId == HumanId ? "Your Graveyard" : "Opponent Graveyard"));
+            }
+            else
+            {
+                GUI.backgroundColor = new Color(0.09f, 0.09f, 0.11f);
+                GUI.Box(graveyardRect, "EMPTY");
+            }
+
+            if (!hideHand) return;
+            x += cardWidth + 30f;
             GUI.Label(new Rect(x, area.y + 3f, 180f, 20f), $"Opponent Hand ({player.Hand.Count})");
             var shownCards = Mathf.Min(player.Hand.Count, 8);
             for (var i = 0; i < shownCards; i++)
@@ -231,15 +261,20 @@ namespace CardGame.Presentation
             }
         }
 
-        private static void DrawCardBack(Rect rect, string count)
+        private void DrawCardBack(Rect rect, string count)
         {
-            GUI.backgroundColor = new Color(0.34f, 0.11f, 0.07f);
+            GUI.backgroundColor = new Color(0.03f, 0.04f, 0.08f);
             GUI.Box(rect, GUIContent.none);
-            GUI.backgroundColor = new Color(0.08f, 0.14f, 0.22f);
-            GUI.Box(new Rect(rect.x + 4f, rect.y + 4f, rect.width - 8f, rect.height - 8f), GUIContent.none);
-            GUI.color = new Color(0.95f, 0.64f, 0.18f);
-            GUI.Label(new Rect(rect.x + 5f, rect.y + rect.height * 0.34f, rect.width - 10f, 22f),
-                string.IsNullOrEmpty(count) ? "DM" : count);
+            var inset = new Rect(rect.x + 2f, rect.y + 2f, rect.width - 4f, rect.height - 4f);
+            if (_cardBack != null)
+                GUI.DrawTexture(inset, _cardBack, ScaleMode.ScaleToFit);
+            else
+                GUI.Box(inset, "DUEL MASTERS");
+            if (!string.IsNullOrEmpty(count))
+            {
+                GUI.color = new Color(0f, 0f, 0f, 0.78f);
+                GUI.Box(new Rect(rect.x + 5f, rect.yMax - 25f, rect.width - 10f, 21f), count);
+            }
             GUI.color = Color.white;
         }
 
@@ -324,7 +359,11 @@ namespace CardGame.Presentation
                 GUIUtility.RotateAroundPivot(90f, rect.center);
             }
 
-            if (!faceDown && _cardArt.TryGetValue(card.Definition.Id, out var texture))
+            if (faceDown && _cardBack != null)
+            {
+                GUI.DrawTexture(inset, _cardBack, ScaleMode.ScaleToFit);
+            }
+            else if (!faceDown && _cardArt.TryGetValue(card.Definition.Id, out var texture))
             {
                 GUI.DrawTexture(inset, texture, ScaleMode.ScaleToFit);
             }
