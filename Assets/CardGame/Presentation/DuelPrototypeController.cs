@@ -76,6 +76,13 @@ namespace CardGame.Presentation
         {
             foreach (var card in StarterDeckCatalog.Cards.Values)
             {
+                var localArt = Resources.Load<Texture2D>($"CardGame/CardArt/{card.DatabaseMediaId:0000}");
+                if (localArt != null)
+                {
+                    _cardArt[card.Id] = localArt;
+                    continue;
+                }
+
                 if (string.IsNullOrEmpty(card.DatabaseImageUrl) || !_artRequests.Add(card.DatabaseImageUrl))
                     continue;
 
@@ -118,16 +125,20 @@ namespace CardGame.Presentation
         {
             var panelWidth = 280f;
             var boardWidth = Screen.width - panelWidth;
-            var cardHeight = Mathf.Clamp((Screen.height - 70f) / 4f, 105f, 150f);
+            var handHeight = Mathf.Clamp(Screen.height * 0.24f, 170f, 230f);
+            var battleHeight = Mathf.Max(115f, (Screen.height - 42f - 34f - 42f - handHeight - 54f) / 2f);
+            var y = 50f;
 
-            DrawPlayerSummary(_state.Players[ComputerId], new Rect(12, 50, boardWidth - 24, 32), "COMPUTER — Kokujo's Darkness Deck");
-            DrawCardRow(_state.Players[ComputerId].BattleZone, new Rect(12, 86, boardWidth - 24, cardHeight),
+            DrawPlayerSummary(_state.Players[ComputerId], new Rect(12, y, boardWidth - 24, 32), "COMPUTER — Kokujo's Darkness Deck");
+            y += 36f;
+            DrawCardRow(_state.Players[ComputerId].BattleZone, new Rect(12, y, boardWidth - 24, battleHeight),
                 ref _computerBattleScroll, card =>
                 {
                     if (!_busy && _state.ActivePlayerId == HumanId) _selectedOpponentCreature = card;
                 }, _selectedOpponentCreature, false, "Computer Battle Zone");
 
-            DrawCardRow(_state.Players[HumanId].BattleZone, new Rect(12, 96 + cardHeight, boardWidth - 24, cardHeight),
+            y += battleHeight + 6f;
+            DrawCardRow(_state.Players[HumanId].BattleZone, new Rect(12, y, boardWidth - 24, battleHeight),
                 ref _humanBattleScroll, card =>
                 {
                     if (!_busy && _state.ActivePlayerId == HumanId)
@@ -137,9 +148,11 @@ namespace CardGame.Presentation
                     }
                 }, _selectedCreature, false, "Your Battle Zone");
 
-            DrawManaRow(_state.Players[HumanId], new Rect(12, 106 + cardHeight * 2, boardWidth - 24, 42));
-            DrawCardRow(_state.Players[HumanId].Hand, new Rect(12, 154 + cardHeight * 2, boardWidth - 24,
-                    Mathf.Max(105, Screen.height - (164 + cardHeight * 2))),
+            y += battleHeight + 6f;
+            DrawManaRow(_state.Players[HumanId], new Rect(12, y, boardWidth - 24, 42));
+            y += 48f;
+            DrawCardRow(_state.Players[HumanId].Hand, new Rect(12, y, boardWidth - 24,
+                    Mathf.Min(handHeight, Screen.height - y - 10f)),
                 ref _handScroll, card =>
                 {
                     if (!_busy && _state.ActivePlayerId == HumanId)
@@ -183,8 +196,9 @@ namespace CardGame.Presentation
             GUI.Box(area, GUIContent.none);
             GUI.Label(new Rect(area.x + 7, area.y + 3, 180, 22), label);
             var inner = new Rect(area.x + 4, area.y + 24, area.width - 8, area.height - 28);
-            var cardWidth = Mathf.Clamp(inner.height * 0.66f, 72, 104);
-            var content = new Rect(0, 0, Mathf.Max(inner.width - 18, cards.Count * (cardWidth + 8)), inner.height - 18);
+            var visibleCardHeight = Mathf.Min(158f, inner.height - 18f);
+            var cardWidth = Mathf.Clamp(visibleCardHeight * 0.66f, 72f, 104f);
+            var content = new Rect(0, 0, Mathf.Max(inner.width - 18, cards.Count * (cardWidth + 8)), visibleCardHeight);
             scroll = GUI.BeginScrollView(inner, scroll, content);
             for (var i = 0; i < cards.Count; i++)
             {
@@ -467,7 +481,17 @@ namespace CardGame.Presentation
         {
             if (!_animationsEnabled || !attacker.Definition.HasDatabaseVideo) yield break;
             _showVideo = true;
-            _videoPlayer.url = attacker.Definition.DatabaseVideoUrl;
+            var localVideo = Resources.Load<VideoClip>($"CardGame/Videos/{attacker.Definition.DatabaseMediaId:0000}");
+            if (localVideo != null)
+            {
+                _videoPlayer.source = VideoSource.VideoClip;
+                _videoPlayer.clip = localVideo;
+            }
+            else
+            {
+                _videoPlayer.source = VideoSource.Url;
+                _videoPlayer.url = attacker.Definition.DatabaseVideoUrl;
+            }
             _videoPlayer.Play();
             while (_showVideo) yield return null;
         }
