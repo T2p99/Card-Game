@@ -30,6 +30,7 @@ namespace CardGame.Presentation
         private Vector2 _humanBattleScroll;
         private Vector2 _computerBattleScroll;
         private Vector2 _manaSelectionScroll;
+        private Vector2 _battleActionScroll;
         private string _message = "Choose a card, charge mana, and summon a creature.";
         private string _viewerMessage = string.Empty;
         private bool _busy;
@@ -577,9 +578,78 @@ namespace CardGame.Presentation
             }
             else
             {
-                GUI.Label(new Rect(infoRect.x, infoRect.yMax - 66f, infoRect.width, 44f),
-                    "Face-up zone viewer — use the arrows to inspect the other cards in this zone.", bodyStyle);
+                var viewingOwnBattleZone = ReferenceEquals(_viewerCards, _state.Players[HumanId].BattleZone);
+                if (viewingOwnBattleZone)
+                    DrawEnlargedBattleActions(new Rect(infoRect.x, infoRect.yMax - 178f, infoRect.width, 162f), bodyStyle);
+                else
+                    GUI.Label(new Rect(infoRect.x, infoRect.yMax - 66f, infoRect.width, 44f),
+                        "Face-up zone viewer — use the arrows to inspect the other cards in this zone.", bodyStyle);
             }
+        }
+
+        private void DrawEnlargedBattleActions(Rect area, GUIStyle bodyStyle)
+        {
+            GUI.Box(area, GUIContent.none);
+            GUI.Label(new Rect(area.x + 10f, area.y + 7f, area.width - 20f, 26f), "AVAILABLE ACTIONS", bodyStyle);
+
+            var attacker = _selectedHand;
+            var canUseControls = !_busy && !_state.IsFinished && _state.ActivePlayerId == HumanId;
+            var hasSummoningSickness = attacker.EnteredBattleZoneOnTurn == _state.TurnNumber &&
+                !attacker.Definition.HasKeyword(CardKeyword.SpeedAttacker);
+            if (attacker.Tapped || hasSummoningSickness)
+            {
+                var reason = attacker.Tapped
+                    ? "TURNED — this creature cannot attack again this turn."
+                    : "This creature has summoning sickness and cannot attack this turn.";
+                GUI.Label(new Rect(area.x + 10f, area.y + 40f, area.width - 20f, 48f), reason, bodyStyle);
+                return;
+            }
+
+            var canAttackPlayer = !attacker.Definition.HasKeyword(CardKeyword.CannotAttack) &&
+                !attacker.Definition.HasKeyword(CardKeyword.CannotAttackPlayers);
+            var canAttackCreatures = !attacker.Definition.HasKeyword(CardKeyword.CannotAttack);
+            var canAttackUntapped = attacker.Definition.HasKeyword(CardKeyword.AttackUntappedCreature);
+            var legalTargets = canAttackCreatures
+                ? _state.Players[ComputerId].BattleZone.Where(card => card.Tapped || canAttackUntapped).ToList()
+                : new List<CardInstance>();
+
+            var buttonHeight = 46f;
+            var buttonWidth = Mathf.Clamp(area.width * 0.31f, 150f, 230f);
+            var actionCount = (canAttackPlayer ? 1 : 0) + legalTargets.Count;
+            var viewport = new Rect(area.x + 8f, area.y + 36f, area.width - 16f, 66f);
+            var content = new Rect(0f, 0f, Mathf.Max(viewport.width - 18f,
+                actionCount * (buttonWidth + 10f)), buttonHeight);
+            _battleActionScroll = GUI.BeginScrollView(viewport, _battleActionScroll, content);
+            var x = 0f;
+            GUI.enabled = canUseControls && canAttackPlayer;
+            if (canAttackPlayer && GUI.Button(new Rect(x, 0f, buttonWidth, buttonHeight), "Attack Player"))
+            {
+                _selectedCreature = attacker;
+                if (StartHumanAttack(AttackTargetKind.Player, 0)) CloseHandCardViewer();
+            }
+
+            if (canAttackPlayer) x += buttonWidth + 10f;
+            GUI.enabled = canUseControls;
+            foreach (var target in legalTargets)
+            {
+                if (GUI.Button(new Rect(x, 0f, buttonWidth, buttonHeight),
+                        $"Attack {target.Definition.Name}"))
+                {
+                    _selectedCreature = attacker;
+                    if (StartHumanAttack(AttackTargetKind.Creature, target.InstanceId)) CloseHandCardViewer();
+                }
+                x += buttonWidth + 10f;
+            }
+            GUI.EndScrollView();
+            GUI.enabled = true;
+
+            var readyBlockers = EligibleBlockers(_state.Players[ComputerId]).Count();
+            var note = readyBlockers > 0
+                ? $"Opponent has {readyBlockers} ready Blocker(s); the opponent chooses which one intercepts."
+                : legalTargets.Count == 0 && !canAttackPlayer
+                    ? "This creature currently has no legal attack."
+                    : "Turned opposing creatures appear here as direct attack targets.";
+            GUI.Label(new Rect(area.x + 10f, area.y + 108f, area.width - 20f, 44f), note, bodyStyle);
         }
 
         private void BeginManaPayment()
@@ -717,18 +787,25 @@ namespace CardGame.Presentation
             return last ?? RuleResult.Fail("No legal spell target is available.");
         }
 
-        private void StartHumanAttack(AttackTargetKind kind, long targetId)
+        private bool StartHumanAttack(AttackTargetKind kind, long targetId)
         {
             var attacker = _selectedCreature;
+            if (attacker == null)
+            {
+                ShowResult(RuleResult.Fail("Choose one of your creatures to attack."));
+                return false;
+            }
             var result = _engine.DeclareAttack(_state, HumanId, attacker.InstanceId, kind, targetId);
             if (!result.Success)
             {
                 ShowResult(result);
-                return;
+                _viewerMessage = result.Error;
+                return false;
             }
 
             _busy = true;
             StartCoroutine(ResolveHumanAttack(attacker));
+            return true;
         }
 
         private IEnumerator ResolveHumanAttack(CardInstance attacker)
