@@ -31,6 +31,8 @@ namespace CardGame.Presentation
         private bool _animationsEnabled = true;
         private VideoPlayer _videoPlayer;
         private RenderTexture _videoTexture;
+        private float _uiWidth;
+        private float _uiHeight;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Bootstrap()
@@ -99,34 +101,47 @@ namespace CardGame.Presentation
         {
             if (_state == null) return;
 
+            const float referenceWidth = 1600f;
+            const float referenceHeight = 900f;
+            var uiScale = Mathf.Max(0.5f, Mathf.Min(Screen.width / referenceWidth, Screen.height / referenceHeight));
+            _uiWidth = Screen.width / uiScale;
+            _uiHeight = Screen.height / uiScale;
+            var previousMatrix = GUI.matrix;
+            GUI.matrix = Matrix4x4.Scale(new Vector3(uiScale, uiScale, 1f));
+
+            GUI.skin.label.fontSize = 15;
+            GUI.skin.button.fontSize = 15;
+            GUI.skin.toggle.fontSize = 14;
+
             GUI.backgroundColor = new Color(0.10f, 0.13f, 0.17f);
-            GUI.Box(new Rect(0, 0, Screen.width, Screen.height), GUIContent.none);
+            GUI.Box(new Rect(0, 0, _uiWidth, _uiHeight), GUIContent.none);
             DrawHeader();
             DrawBoard();
             DrawControlPanel();
 
             if (_showVideo) DrawVideoOverlay();
             if (_state.IsFinished) DrawWinnerOverlay();
+            GUI.matrix = previousMatrix;
         }
 
         private void DrawHeader()
         {
             GUI.backgroundColor = new Color(0.18f, 0.21f, 0.27f);
-            GUI.Box(new Rect(0, 0, Screen.width, 42), GUIContent.none);
+            GUI.Box(new Rect(0, 0, _uiWidth, 42), GUIContent.none);
             GUI.color = Color.white;
             GUI.Label(new Rect(16, 8, 500, 26),
                 $"Turn {_state.TurnNumber}  •  {(_state.ActivePlayerId == HumanId ? "Your turn" : "Computer turn")}  •  {_state.Phase}");
-            GUI.Label(new Rect(520, 8, Screen.width - 820, 26), _message);
+            GUI.Label(new Rect(520, 8, _uiWidth - 820, 26), _message);
             _animationsEnabled = GUI.Toggle(
-                new Rect(Screen.width - 270, 8, 250, 26), _animationsEnabled, " Play attack animations");
+                new Rect(_uiWidth - 270, 8, 250, 26), _animationsEnabled, " Play attack animations");
         }
 
         private void DrawBoard()
         {
             var panelWidth = 280f;
-            var boardWidth = Screen.width - panelWidth;
-            var handHeight = Mathf.Clamp(Screen.height * 0.24f, 170f, 230f);
-            var battleHeight = Mathf.Max(115f, (Screen.height - 42f - 34f - 42f - handHeight - 54f) / 2f);
+            var boardWidth = _uiWidth - panelWidth;
+            var handHeight = Mathf.Clamp(_uiHeight * 0.24f, 170f, 230f);
+            var battleHeight = Mathf.Max(115f, (_uiHeight - 42f - 34f - 42f - handHeight - 54f) / 2f);
             var y = 50f;
 
             DrawPlayerSummary(_state.Players[ComputerId], new Rect(12, y, boardWidth - 24, 32), "COMPUTER — Kokujo's Darkness Deck");
@@ -152,7 +167,7 @@ namespace CardGame.Presentation
             DrawManaRow(_state.Players[HumanId], new Rect(12, y, boardWidth - 24, 42));
             y += 48f;
             DrawCardRow(_state.Players[HumanId].Hand, new Rect(12, y, boardWidth - 24,
-                    Mathf.Min(handHeight, Screen.height - y - 10f)),
+                    Mathf.Min(handHeight, _uiHeight - y - 10f)),
                 ref _handScroll, card =>
                 {
                     if (!_busy && _state.ActivePlayerId == HumanId)
@@ -241,7 +256,7 @@ namespace CardGame.Presentation
 
         private void DrawControlPanel()
         {
-            var rect = new Rect(Screen.width - 270, 52, 258, Screen.height - 64);
+            var rect = new Rect(_uiWidth - 270, 52, 258, _uiHeight - 64);
             GUI.backgroundColor = new Color(0.20f, 0.22f, 0.27f);
             GUI.Box(rect, GUIContent.none);
             GUILayout.BeginArea(new Rect(rect.x + 10, rect.y + 10, rect.width - 20, rect.height - 20));
@@ -499,9 +514,9 @@ namespace CardGame.Presentation
         private void DrawVideoOverlay()
         {
             GUI.color = Color.white;
-            GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), _videoTexture, ScaleMode.ScaleToFit);
+            GUI.DrawTexture(new Rect(0, 0, _uiWidth, _uiHeight), _videoTexture, ScaleMode.ScaleToFit);
             GUI.backgroundColor = new Color(0.12f, 0.12f, 0.12f);
-            if (GUI.Button(new Rect(Screen.width - 150, 18, 132, 44), "Skip Animation")) EndVideo();
+            if (GUI.Button(new Rect(_uiWidth - 150, 18, 132, 44), "Skip Animation")) EndVideo();
         }
 
         private void EndVideo()
@@ -513,11 +528,11 @@ namespace CardGame.Presentation
         private void DrawWinnerOverlay()
         {
             GUI.color = new Color(0, 0, 0, 0.82f);
-            GUI.Box(new Rect(0, 0, Screen.width, Screen.height), GUIContent.none);
+            GUI.Box(new Rect(0, 0, _uiWidth, _uiHeight), GUIContent.none);
             GUI.color = Color.white;
             var text = _state.WinnerPlayerId == HumanId ? "YOU WIN" : "COMPUTER WINS";
-            GUI.Label(new Rect(Screen.width / 2f - 150, Screen.height / 2f - 45, 300, 40), text);
-            GUI.Label(new Rect(Screen.width / 2f - 150, Screen.height / 2f, 300, 30), _state.WinReason);
+            GUI.Label(new Rect(_uiWidth / 2f - 150, _uiHeight / 2f - 45, 300, 40), text);
+            GUI.Label(new Rect(_uiWidth / 2f - 150, _uiHeight / 2f, 300, 30), _state.WinReason);
         }
 
         private static IReadOnlyCollection<long> SelectPayment(PlayerState player, CardDefinition definition)
