@@ -16,12 +16,16 @@ namespace CardGame.Presentation
         private readonly Dictionary<string, Texture2D> _cardArt = new Dictionary<string, Texture2D>();
         private readonly HashSet<string> _artRequests = new HashSet<string>();
         private readonly HashSet<long> _selectedManaIds = new HashSet<long>();
+        private long _selectedEvolutionBaseId;
 
         private RulesEngine _engine;
         private GameState _state;
         private CardInstance _selectedHand;
         private CardInstance _selectedCreature;
         private CardInstance _selectedOpponentCreature;
+        private IReadOnlyList<CardInstance> _viewerCards;
+        private string _viewerZoneName = string.Empty;
+        private bool _viewerAllowsHandActions;
         private Vector2 _handScroll;
         private Vector2 _humanBattleScroll;
         private Vector2 _computerBattleScroll;
@@ -124,7 +128,7 @@ namespace CardGame.Presentation
             DrawBoard();
             DrawControlPanel();
 
-            if (_showHandCardViewer) DrawHandCardViewer();
+            if (_showHandCardViewer) DrawCardViewer();
             if (_showVideo) DrawVideoOverlay();
             if (_state.IsFinished) DrawWinnerOverlay();
             GUI.matrix = previousMatrix;
@@ -148,18 +152,22 @@ namespace CardGame.Presentation
             var boardWidth = _uiWidth - panelWidth;
             var handHeight = Mathf.Clamp(_uiHeight * 0.24f, 170f, 230f);
             var hiddenZoneHeight = Mathf.Clamp(_uiHeight * 0.105f, 82f, 100f);
-            var fixedHeight = 50f + 36f + hiddenZoneHeight * 2f + 42f + handHeight + 40f;
-            var battleHeight = Mathf.Max(105f, (_uiHeight - fixedHeight) / 2f);
+            var manaZoneHeight = Mathf.Clamp(_uiHeight * 0.085f, 72f, 88f);
+            var fixedHeight = 50f + 36f + hiddenZoneHeight * 2f + manaZoneHeight * 2f + handHeight + 52f;
+            var battleHeight = Mathf.Max(88f, (_uiHeight - fixedHeight) / 2f);
             var y = 50f;
 
             DrawPlayerSummary(_state.Players[ComputerId], new Rect(12, y, boardWidth - 24, 32), "COMPUTER — Kokujo's Darkness Deck");
             y += 36f;
             DrawDeckShieldsAndHiddenHand(_state.Players[ComputerId], new Rect(12, y, boardWidth - 24, hiddenZoneHeight), true);
             y += hiddenZoneHeight + 6f;
+            DrawManaRow(_state.Players[ComputerId], new Rect(12, y, boardWidth - 24, manaZoneHeight), "Opponent Mana", true);
+            y += manaZoneHeight + 6f;
             DrawCardRow(_state.Players[ComputerId].BattleZone, new Rect(12, y, boardWidth - 24, battleHeight),
                 ref _computerBattleScroll, card =>
                 {
-                    if (!_busy && _state.ActivePlayerId == HumanId) _selectedOpponentCreature = card;
+                    _selectedOpponentCreature = card;
+                    OpenFaceUpCardViewer(card, _state.Players[ComputerId].BattleZone, "Opponent Battle Zone");
                 }, _selectedOpponentCreature, false, "Computer Battle Zone");
 
             y += battleHeight + 6f;
@@ -171,13 +179,14 @@ namespace CardGame.Presentation
                         _selectedCreature = card;
                         _selectedHand = null;
                     }
+                    OpenFaceUpCardViewer(card, _state.Players[HumanId].BattleZone, "Your Battle Zone");
                 }, _selectedCreature, false, "Your Battle Zone");
 
             y += battleHeight + 6f;
             DrawDeckShieldsAndHiddenHand(_state.Players[HumanId], new Rect(12, y, boardWidth - 24, hiddenZoneHeight), false);
             y += hiddenZoneHeight + 6f;
-            DrawManaRow(_state.Players[HumanId], new Rect(12, y, boardWidth - 24, 42));
-            y += 48f;
+            DrawManaRow(_state.Players[HumanId], new Rect(12, y, boardWidth - 24, manaZoneHeight), "Your Mana — face up, reversed", true);
+            y += manaZoneHeight + 6f;
             DrawCardRow(_state.Players[HumanId].Hand, new Rect(12, y, boardWidth - 24,
                     Mathf.Min(handHeight, _uiHeight - y - 10f)),
                 ref _handScroll, card =>
@@ -240,16 +249,35 @@ namespace CardGame.Presentation
                 $"{label}     Hand {player.Hand.Count}   Shields {player.Shields.Count}   Mana {player.Mana.Count}   Deck {player.Deck.Count}   Graveyard {player.Graveyard.Count}");
         }
 
-        private void DrawManaRow(PlayerState player, Rect rect)
+        private void DrawManaRow(PlayerState player, Rect rect, string label, bool reverseArtwork)
         {
             GUI.Box(rect, GUIContent.none);
-            GUI.Label(new Rect(rect.x + 8, rect.y + 4, 90, 24), "Your Mana");
-            var x = rect.x + 92;
-            foreach (var mana in player.Mana.Take(14))
+            GUI.Label(new Rect(rect.x + 8f, rect.y + 3f, 260f, 22f), $"{label} ({player.Mana.Count})");
+            var inner = new Rect(rect.x + 6f, rect.y + 25f, rect.width - 12f, rect.height - 29f);
+            var cardHeight = Mathf.Max(42f, inner.height);
+            var cardWidth = cardHeight * 0.67f;
+            for (var i = 0; i < player.Mana.Count; i++)
             {
-                GUI.color = mana.Tapped ? new Color(0.45f, 0.45f, 0.45f) : CivilizationColor(mana.Definition);
-                GUI.Box(new Rect(x, rect.y + 6, 54, 29), mana.Tapped ? "USED" : mana.Definition.Cost.ToString());
-                x += 58;
+                var mana = player.Mana[i];
+                var cardRect = new Rect(inner.x + i * (cardWidth + 7f), inner.y, cardWidth, cardHeight);
+                GUI.backgroundColor = CivilizationColor(mana.Definition);
+                if (GUI.Button(cardRect, GUIContent.none))
+                    OpenFaceUpCardViewer(mana, player.Mana, label);
+
+                var artRect = new Rect(cardRect.x + 3f, cardRect.y + 3f, cardRect.width - 6f, cardRect.height - 6f);
+                if (_cardArt.TryGetValue(mana.Definition.Id, out var texture))
+                {
+                    if (reverseArtwork)
+                        GUI.DrawTextureWithTexCoords(artRect, texture, new Rect(1f, 1f, -1f, -1f));
+                    else
+                        GUI.DrawTexture(artRect, texture, ScaleMode.ScaleToFit);
+                }
+                if (mana.Tapped)
+                {
+                    GUI.color = new Color(0f, 0f, 0f, 0.67f);
+                    GUI.Box(artRect, "TURNED");
+                    GUI.color = Color.white;
+                }
             }
             GUI.color = Color.white;
         }
@@ -370,41 +398,67 @@ namespace CardGame.Presentation
             _selectedCreature = null;
             _selectedOpponentCreature = null;
             _showHandCardViewer = true;
+            _viewerCards = _state.Players[HumanId].Hand;
+            _viewerZoneName = "Your Hand";
+            _viewerAllowsHandActions = true;
             _selectingManaPayment = false;
             _selectedManaIds.Clear();
+            _selectedEvolutionBaseId = 0;
             _viewerMessage = string.Empty;
+        }
+
+        private void OpenFaceUpCardViewer(CardInstance card, IReadOnlyList<CardInstance> cards, string zoneName)
+        {
+            _selectedHand = card;
+            _viewerCards = cards;
+            _viewerZoneName = zoneName;
+            _viewerAllowsHandActions = false;
+            _showHandCardViewer = true;
+            _selectingManaPayment = false;
+            _selectedManaIds.Clear();
+            _selectedEvolutionBaseId = 0;
+            _viewerMessage = card.Tapped ? "This card is currently turned." : string.Empty;
         }
 
         private void CloseHandCardViewer()
         {
+            var wasHandViewer = _viewerAllowsHandActions;
             _showHandCardViewer = false;
+            _viewerCards = null;
+            _viewerZoneName = string.Empty;
+            _viewerAllowsHandActions = false;
             _selectingManaPayment = false;
             _selectedManaIds.Clear();
+            _selectedEvolutionBaseId = 0;
             _viewerMessage = string.Empty;
+            if (!wasHandViewer) _selectedHand = null;
         }
 
-        private void NavigateHand(int direction)
+        private void NavigateViewer(int direction)
         {
-            var hand = _state.Players[HumanId].Hand;
-            if (hand.Count == 0)
+            var cards = _viewerCards;
+            if (cards == null || cards.Count == 0)
             {
                 CloseHandCardViewer();
                 return;
             }
 
-            var currentIndex = hand.IndexOf(_selectedHand);
+            var currentIndex = -1;
+            for (var i = 0; i < cards.Count; i++)
+                if (cards[i] == _selectedHand) currentIndex = i;
             if (currentIndex < 0) currentIndex = 0;
-            var nextIndex = (currentIndex + direction + hand.Count) % hand.Count;
-            _selectedHand = hand[nextIndex];
+            var nextIndex = (currentIndex + direction + cards.Count) % cards.Count;
+            _selectedHand = cards[nextIndex];
             _selectingManaPayment = false;
             _selectedManaIds.Clear();
+            _selectedEvolutionBaseId = 0;
             _viewerMessage = string.Empty;
         }
 
-        private void DrawHandCardViewer()
+        private void DrawCardViewer()
         {
-            var hand = _state.Players[HumanId].Hand;
-            if (_selectedHand == null || !hand.Contains(_selectedHand))
+            var cards = _viewerCards;
+            if (_selectedHand == null || cards == null || !cards.Contains(_selectedHand))
             {
                 CloseHandCardViewer();
                 return;
@@ -436,12 +490,14 @@ namespace CardGame.Presentation
 
             var previousFontSize = GUI.skin.button.fontSize;
             GUI.skin.button.fontSize = 34;
-            if (GUI.Button(new Rect(panel.x + 14f, panel.center.y - 38f, 52f, 76f), "◀")) NavigateHand(-1);
-            if (GUI.Button(new Rect(imageRect.xMax + 12f, panel.center.y - 38f, 52f, 76f), "▶")) NavigateHand(1);
+            if (GUI.Button(new Rect(panel.x + 14f, panel.center.y - 38f, 52f, 76f), "◀")) NavigateViewer(-1);
+            if (GUI.Button(new Rect(imageRect.xMax + 12f, panel.center.y - 38f, 52f, 76f), "▶")) NavigateViewer(1);
             GUI.skin.button.fontSize = previousFontSize;
 
-            var index = hand.IndexOf(_selectedHand) + 1;
-            GUI.Label(new Rect(imageRect.x, panel.y + 18f, imageRect.width, 30f), $"Card {index} of {hand.Count}");
+            var index = 0;
+            for (var i = 0; i < cards.Count; i++)
+                if (cards[i] == _selectedHand) index = i + 1;
+            GUI.Label(new Rect(imageRect.x, panel.y + 18f, imageRect.width, 30f), $"{_viewerZoneName} — card {index} of {cards.Count}");
 
             var infoX = imageRect.xMax + 82f;
             var infoRect = new Rect(infoX, panel.y + 62f, panel.xMax - infoX - 24f, panel.height - 82f);
@@ -464,11 +520,11 @@ namespace CardGame.Presentation
                 GUI.Label(new Rect(infoRect.x, infoRect.y + 258f, infoRect.width, 54f), _viewerMessage, messageStyle);
             }
 
-            if (_selectingManaPayment)
+            if (_selectingManaPayment && _viewerAllowsHandActions)
             {
                 DrawManaPaymentSelector(new Rect(infoRect.x, infoRect.y + 314f, infoRect.width, infoRect.height - 314f));
             }
-            else
+            else if (_viewerAllowsHandActions)
             {
                 var canAct = !_busy && !_state.IsFinished && _state.ActivePlayerId == HumanId;
                 GUI.enabled = canAct;
@@ -478,11 +534,17 @@ namespace CardGame.Presentation
                     BeginManaPayment();
                 GUI.enabled = true;
             }
+            else
+            {
+                GUI.Label(new Rect(infoRect.x, infoRect.yMax - 66f, infoRect.width, 44f),
+                    "Face-up zone viewer — use the arrows to inspect the other cards in this zone.", bodyStyle);
+            }
         }
 
         private void BeginManaPayment()
         {
             _selectedManaIds.Clear();
+            _selectedEvolutionBaseId = 0;
             _selectingManaPayment = true;
             _viewerMessage = _selectedHand.Definition.Cost == 0
                 ? "This card costs no mana. Confirm to play it."
@@ -493,10 +555,34 @@ namespace CardGame.Presentation
         {
             var player = _state.Players[HumanId];
             var cost = _selectedHand.Definition.Cost;
-            GUI.Label(new Rect(area.x, area.y, area.width, 28f),
+            var isEvolution = _selectedHand.Definition.Type == CardType.EvolutionCreature;
+            var manaTop = area.y;
+
+            if (isEvolution)
+            {
+                GUI.Label(new Rect(area.x, area.y, area.width, 24f),
+                    $"Choose a {_selectedHand.Definition.EvolutionRace} in your battle zone to evolve:");
+                var bases = player.BattleZone.Where(card => card.Definition.Races.Any(race =>
+                    race.Equals(_selectedHand.Definition.EvolutionRace, StringComparison.OrdinalIgnoreCase))).ToList();
+                var baseCardHeight = 90f;
+                var baseCardWidth = baseCardHeight * 0.66f;
+                for (var i = 0; i < bases.Count; i++)
+                {
+                    var baseCard = bases[i];
+                    var baseRect = new Rect(area.x + i * (baseCardWidth + 10f), area.y + 26f, baseCardWidth, baseCardHeight);
+                    DrawCardButton(baseCard, baseRect, _selectedEvolutionBaseId == baseCard.InstanceId, false,
+                        () => _selectedEvolutionBaseId = baseCard.InstanceId);
+                }
+                if (bases.Count == 0)
+                    GUI.Label(new Rect(area.x, area.y + 32f, area.width, 48f),
+                        $"You do not currently control a {_selectedHand.Definition.EvolutionRace}.");
+                manaTop += 122f;
+            }
+
+            GUI.Label(new Rect(area.x, manaTop, area.width, 28f),
                 $"Mana selected: {_selectedManaIds.Count} / {cost}. At least one must match the card's civilization.");
 
-            var viewport = new Rect(area.x, area.y + 32f, area.width, Mathf.Max(80f, area.height - 100f));
+            var viewport = new Rect(area.x, manaTop + 32f, area.width, Mathf.Max(70f, area.yMax - manaTop - 100f));
             GUI.Box(viewport, GUIContent.none);
             var cardHeight = Mathf.Min(132f, viewport.height - 22f);
             var cardWidth = cardHeight * 0.66f;
@@ -523,7 +609,7 @@ namespace CardGame.Presentation
             }
             GUI.EndScrollView();
 
-            var confirmEnabled = _selectedManaIds.Count == cost;
+            var confirmEnabled = _selectedManaIds.Count == cost && (!isEvolution || _selectedEvolutionBaseId != 0);
             GUI.enabled = confirmEnabled;
             if (GUI.Button(new Rect(area.x, area.yMax - 56f, area.width * 0.62f, 48f), $"Confirm — Turn {cost} Mana"))
                 ConfirmManualPlay();
@@ -532,6 +618,7 @@ namespace CardGame.Presentation
             {
                 _selectingManaPayment = false;
                 _selectedManaIds.Clear();
+                _selectedEvolutionBaseId = 0;
                 _viewerMessage = string.Empty;
             }
         }
@@ -544,7 +631,7 @@ namespace CardGame.Presentation
             if (card.Definition.Type == CardType.Spell)
                 result = TryCastSpell(HumanId, card, payment, _selectedOpponentCreature?.InstanceId ?? 0);
             else
-                result = _engine.SummonCreature(_state, HumanId, card.InstanceId, payment);
+                result = _engine.SummonCreature(_state, HumanId, card.InstanceId, payment, _selectedEvolutionBaseId);
 
             ShowResult(result, result.Success ? $"Played {card.Definition.Name}." : null);
             if (!result.Success)
