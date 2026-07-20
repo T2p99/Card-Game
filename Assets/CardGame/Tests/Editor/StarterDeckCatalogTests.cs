@@ -1,0 +1,54 @@
+using System.Linq;
+using NUnit.Framework;
+
+namespace CardGame.Core.Tests
+{
+    public sealed class StarterDeckCatalogTests
+    {
+        [Test]
+        public void ShobusFireDeck_HasExactLegalCardCountAndCopies()
+        {
+            var deck = StarterDeckCatalog.ShobusFireDeck.Build(StarterDeckCatalog.Cards);
+
+            Assert.That(deck.Count, Is.EqualTo(40));
+            Assert.That(deck.Count(card => card.Name == "Deadly Fighter Braid Claw"), Is.EqualTo(4));
+            Assert.That(deck.Count(card => card.Name == "Tornado Flame"), Is.EqualTo(2));
+            Assert.That(deck.All(card => card.Civilizations.Single() == Civilization.Fire), Is.True);
+        }
+
+        [Test]
+        public void KokujosDarknessDeck_HasExactLegalCardCountAndCopies()
+        {
+            var deck = StarterDeckCatalog.KokujosDarknessDeck.Build(StarterDeckCatalog.Cards);
+
+            Assert.That(deck.Count, Is.EqualTo(40));
+            Assert.That(deck.Count(card => card.Name == "Horrid Worm"), Is.EqualTo(4));
+            Assert.That(deck.Count(card => card.Name == "Terror Pit"), Is.EqualTo(1));
+            Assert.That(deck.All(card => card.Civilizations.Single() == Civilization.Darkness), Is.True);
+        }
+
+        [Test]
+        public void StarterDecks_CanInitializeDeterministicMatch()
+        {
+            var fire = StarterDeckCatalog.ShobusFireDeck.Build(StarterDeckCatalog.Cards);
+            var darkness = StarterDeckCatalog.KokujosDarknessDeck.Build(StarterDeckCatalog.Cards);
+
+            var state = new RulesEngine().StartGame(fire, darkness, seed: 2004, startingPlayerId: 0);
+
+            Assert.That(state.Players[0].Deck.Count, Is.EqualTo(30));
+            Assert.That(state.Players[1].Deck.Count, Is.EqualTo(30));
+            Assert.That(state.Players[0].Hand.Count, Is.EqualTo(5));
+            Assert.That(state.Players[1].Shields.Count, Is.EqualTo(5));
+        }
+
+        [Test]
+        public void Catalog_TracksProvenanceAndDoesNotClaimEffectsAreComplete()
+        {
+            Assert.That(StarterDeckCatalog.Cards.Count, Is.EqualTo(41));
+            Assert.That(StarterDeckCatalog.Cards.Values.All(card =>
+                card.DataSource == StarterDeckCatalog.CardDatabaseSource), Is.True);
+            Assert.That(StarterDeckCatalog.Cards.Values.All(card =>
+                card.ImplementationStatus == CardImplementationStatus.DataOnly), Is.True);
+        }
+    }
+}

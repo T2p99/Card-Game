@@ -4,7 +4,7 @@ Private, non-commercial Duel Masters fan simulator built with Unity 6.5 for Andr
 
 ## Current milestone
 
-The first vertical slice implements the English TCG core rules as a deterministic C# engine. It intentionally starts with a small card subset before adding the full English card pool, online play, and cinematic attacks.
+The first vertical slice implements the English TCG core rules as a deterministic C# engine. It now includes the exact 40-card lists for Shobu's Fire Deck and Kokujo's Darkness Deck, with database-backed identity and stat fields. Card-specific effects remain explicitly marked as data-only until their rules are implemented and tested.
 
 ## Open locally
 

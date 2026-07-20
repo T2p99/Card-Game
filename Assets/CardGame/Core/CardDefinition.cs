@@ -34,6 +34,13 @@ namespace CardGame.Core
         AttackUntappedCreature
     }
 
+    public enum CardImplementationStatus
+    {
+        DataOnly,
+        CoreKeywords,
+        Complete
+    }
+
     [Serializable]
     public sealed class KeywordAbility
     {
@@ -61,6 +68,8 @@ namespace CardGame.Core
         public string RulesText = string.Empty;
         public string SetCode = string.Empty;
         public string CollectorNumber = string.Empty;
+        public string DataSource = string.Empty;
+        public CardImplementationStatus ImplementationStatus = CardImplementationStatus.DataOnly;
 
         public bool IsCreature => Type == CardType.Creature || Type == CardType.EvolutionCreature;
 

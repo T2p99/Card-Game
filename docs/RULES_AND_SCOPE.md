@@ -52,7 +52,9 @@ The first vertical slice includes:
 - turn, draw, mana charge, mana payment, summon, attack, block, battle, shield break, and win logic;
 - core keyword hooks for Blocker, Speed Attacker, Shield Trigger, Double Breaker, Triple Breaker, Power Attacker, and Slayer;
 - local rules-engine tests;
-- a small starter dataset using identifiers and stats only.
+- the exact card quantities from the English Shobu's Fire and Kokujo's Darkness 40-card theme decks;
+- database-backed identity, civilization, cost, type, race, power, set, and collector-number fields for those cards;
+- explicit implementation-status metadata so incomplete card effects cannot be mistaken for supported behavior.
 
 It does not yet include:
 
