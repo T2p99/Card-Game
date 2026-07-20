@@ -25,6 +25,7 @@ namespace CardGame.Core
         public int EnteredBattleZoneOnTurn = -1;
         public int TemporaryPowerAttacker;
         public bool TemporaryDoubleBreaker;
+        public List<CardInstance> EvolutionMaterials = new List<CardInstance>();
     }
 
     [Serializable]
