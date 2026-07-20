@@ -115,6 +115,47 @@ namespace CardGame.Core
             Add(cards, C("dm01-065", "Wandering Braineater", Civilization.Darkness, 2, CardType.Creature, "Living Dead", 2000, "DM-01", "65/110"));
             Add(cards, C("dm01-066", "Writhing Bone Ghoul", Civilization.Darkness, 2, CardType.Creature, "Living Dead", 2000, "DM-01", "66/110"));
 
+            Configure(cards, "dm01-070", "Power attacker +2000.", CardImplementationStatus.CoreKeywords,
+                new KeywordAbility(CardKeyword.PowerAttacker, 2000));
+            Configure(cards, "dm01-074", "Must attack each turn if able.", CardImplementationStatus.CoreKeywords,
+                new KeywordAbility(CardKeyword.MustAttackIfAble));
+            Configure(cards, "dm01-075", "Must attack each turn if able.", CardImplementationStatus.CoreKeywords,
+                new KeywordAbility(CardKeyword.MustAttackIfAble));
+            Configure(cards, "dm01-080", "No abilities.", CardImplementationStatus.Complete);
+
+            Configure(cards, "dm02-034", "Evolves from a Human; gains attack power for each other Human.", CardImplementationStatus.DataOnly);
+            Configure(cards, "dm01-067", "Gains +2000 power while attacking if you control a Human.", CardImplementationStatus.DataOnly);
+            Configure(cards, "dm01-071", "One of your creatures gains power attacker +2000 for the turn.", CardImplementationStatus.DataOnly);
+            Configure(cards, "dm01-073", "Destroy an opposing creature with power 2000 or less.", CardImplementationStatus.DataOnly);
+            Configure(cards, "dm02-039", "While attacking, gains +2000 power per other tapped creature you control.", CardImplementationStatus.DataOnly);
+            Configure(cards, "dm01-077", "Gains +2000 power while attacking if you control an Armorloid.", CardImplementationStatus.DataOnly);
+            Configure(cards, "dm02-041", "When it is your only creature, gains power attacker +4000 and double breaker.", CardImplementationStatus.DataOnly);
+            Configure(cards, "dm01-081", "One of your creatures gains power attacker +4000 and double breaker for the turn.", CardImplementationStatus.DataOnly);
+
+            Configure(cards, "dm02-023", "When it attacks, you may return a creature from your graveyard to your hand.", CardImplementationStatus.DataOnly);
+            Configure(cards, "dm01-046", "Blocker; cannot attack; destroy it after it battles.", CardImplementationStatus.CoreKeywords,
+                new KeywordAbility(CardKeyword.Blocker),
+                new KeywordAbility(CardKeyword.CannotAttack),
+                new KeywordAbility(CardKeyword.DestroyAfterBattle));
+            Configure(cards, "dm01-047", "Slayer.", CardImplementationStatus.Complete,
+                new KeywordAbility(CardKeyword.Slayer));
+            Configure(cards, "dm01-048", "Destroy this creature after it battles.", CardImplementationStatus.Complete,
+                new KeywordAbility(CardKeyword.DestroyAfterBattle));
+            Configure(cards, "dm02-024", "Evolves from a Parasite Worm; may destroy an opposing creature when summoned.", CardImplementationStatus.DataOnly);
+            Configure(cards, "dm01-051", "Blocker.", CardImplementationStatus.Complete,
+                new KeywordAbility(CardKeyword.Blocker));
+            Configure(cards, "dm01-052", "Shield trigger; return a creature from your graveyard to your hand.", CardImplementationStatus.DataOnly,
+                new KeywordAbility(CardKeyword.ShieldTrigger));
+            Configure(cards, "dm01-053", "Destroy an opposing untapped creature.", CardImplementationStatus.DataOnly);
+            Configure(cards, "dm02-027", "When it attacks, send one of your shields to your graveyard; double breaker.", CardImplementationStatus.DataOnly);
+            Configure(cards, "dm01-054", "Shield trigger; your opponent discards a random card.", CardImplementationStatus.DataOnly,
+                new KeywordAbility(CardKeyword.ShieldTrigger));
+            Configure(cards, "dm01-056", "Slayer.", CardImplementationStatus.Complete,
+                new KeywordAbility(CardKeyword.Slayer));
+            Configure(cards, "dm02-029", "Blocker; cannot attack players.", CardImplementationStatus.Complete,
+                new KeywordAbility(CardKeyword.Blocker),
+                new KeywordAbility(CardKeyword.CannotAttackPlayers));
+
             return cards;
         }
 
@@ -143,6 +184,19 @@ namespace CardGame.Core
         private static void Add(IDictionary<string, CardDefinition> cards, CardDefinition card)
         {
             cards.Add(card.Id, card);
+        }
+
+        private static void Configure(
+            IDictionary<string, CardDefinition> cards,
+            string id,
+            string rulesText,
+            CardImplementationStatus status,
+            params KeywordAbility[] abilities)
+        {
+            var card = cards[id];
+            card.RulesText = rulesText;
+            card.ImplementationStatus = status;
+            card.Abilities = abilities;
         }
     }
 }

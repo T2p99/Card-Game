@@ -42,13 +42,17 @@ namespace CardGame.Core.Tests
         }
 
         [Test]
-        public void Catalog_TracksProvenanceAndDoesNotClaimEffectsAreComplete()
+        public void Catalog_TracksProvenanceAndImplementationStatus()
         {
             Assert.That(StarterDeckCatalog.Cards.Count, Is.EqualTo(41));
             Assert.That(StarterDeckCatalog.Cards.Values.All(card =>
                 card.DataSource == StarterDeckCatalog.CardDatabaseSource), Is.True);
-            Assert.That(StarterDeckCatalog.Cards.Values.All(card =>
-                card.ImplementationStatus == CardImplementationStatus.DataOnly), Is.True);
+            Assert.That(StarterDeckCatalog.Cards["dm01-070"].KeywordValue(CardKeyword.PowerAttacker), Is.EqualTo(2000));
+            Assert.That(StarterDeckCatalog.Cards["dm01-074"].HasKeyword(CardKeyword.MustAttackIfAble), Is.True);
+            Assert.That(StarterDeckCatalog.Cards["dm01-080"].ImplementationStatus, Is.EqualTo(CardImplementationStatus.Complete));
+            Assert.That(StarterDeckCatalog.Cards["dm01-047"].HasKeyword(CardKeyword.Slayer), Is.True);
+            Assert.That(StarterDeckCatalog.Cards["dm02-029"].HasKeyword(CardKeyword.Blocker), Is.True);
+            Assert.That(StarterDeckCatalog.Cards["dm01-073"].ImplementationStatus, Is.EqualTo(CardImplementationStatus.DataOnly));
         }
     }
 }

@@ -31,7 +31,11 @@ namespace CardGame.Core
         TripleBreaker,
         PowerAttacker,
         Slayer,
-        AttackUntappedCreature
+        AttackUntappedCreature,
+        MustAttackIfAble,
+        CannotAttack,
+        CannotAttackPlayers,
+        DestroyAfterBattle
     }
 
     public enum CardImplementationStatus

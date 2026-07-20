@@ -96,6 +96,11 @@ namespace CardGame.Core
             var attacker = Find(state.ActivePlayer.BattleZone, attackerInstanceId);
             if (attacker == null) return RuleResult.Fail("The attacker is not in the active player's battle zone.");
             if (attacker.Tapped) return RuleResult.Fail("A tapped creature cannot attack.");
+            if (attacker.Definition.HasKeyword(CardKeyword.CannotAttack))
+                return RuleResult.Fail("This creature cannot attack.");
+            if (targetKind == AttackTargetKind.Player &&
+                attacker.Definition.HasKeyword(CardKeyword.CannotAttackPlayers))
+                return RuleResult.Fail("This creature cannot attack players.");
             if (attacker.EnteredBattleZoneOnTurn == state.TurnNumber &&
                 !attacker.Definition.HasKeyword(CardKeyword.SpeedAttacker))
                 return RuleResult.Fail("The creature has summoning sickness.");
@@ -166,6 +171,21 @@ namespace CardGame.Core
             if (state.PendingAttack != null) return RuleResult.Fail("Resolve the pending attack first.");
             if (state.PendingShieldTriggers.Count > 0)
                 return RuleResult.Fail("Resolve pending shield triggers first.");
+
+            foreach (var creature in state.ActivePlayer.BattleZone)
+            {
+                var timingAllowsAttack = !creature.Tapped &&
+                    (creature.EnteredBattleZoneOnTurn != state.TurnNumber ||
+                     creature.Definition.HasKeyword(CardKeyword.SpeedAttacker));
+                var canAttackPlayer = !creature.Definition.HasKeyword(CardKeyword.CannotAttack) &&
+                    !creature.Definition.HasKeyword(CardKeyword.CannotAttackPlayers);
+                var canAttackCreature = !creature.Definition.HasKeyword(CardKeyword.CannotAttack) &&
+                    state.Opponent.BattleZone.Any(target => target.Tapped ||
+                        creature.Definition.HasKeyword(CardKeyword.AttackUntappedCreature));
+                if (timingAllowsAttack && (canAttackPlayer || canAttackCreature) &&
+                    creature.Definition.HasKeyword(CardKeyword.MustAttackIfAble))
+                    return RuleResult.Fail($"{creature.Definition.Name} must attack this turn if able.");
+            }
 
             state.ActivePlayerId = 1 - state.ActivePlayerId;
             state.TurnNumber++;
@@ -308,8 +328,13 @@ namespace CardGame.Core
             var attackerSlayer = attacker.Definition.HasKeyword(CardKeyword.Slayer);
             var defenderSlayer = defender.Definition.HasKeyword(CardKeyword.Slayer);
 
-            if (attackerPower <= defenderPower || defenderSlayer) Destroy(attackerOwner, attacker);
-            if (defenderPower <= attackerPower || attackerSlayer) Destroy(defenderOwner, defender);
+            var destroyAttacker = attackerPower <= defenderPower || defenderSlayer ||
+                attacker.Definition.HasKeyword(CardKeyword.DestroyAfterBattle);
+            var destroyDefender = defenderPower <= attackerPower || attackerSlayer ||
+                defender.Definition.HasKeyword(CardKeyword.DestroyAfterBattle);
+
+            if (destroyAttacker) Destroy(attackerOwner, attacker);
+            if (destroyDefender) Destroy(defenderOwner, defender);
         }
 
         private static void ResolvePlayerAttack(GameState state, long attackerId, int defendingPlayerId)

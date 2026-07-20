@@ -67,3 +67,10 @@ It does not yet include:
 ## Architecture rule
 
 Gameplay logic must remain independent of Unity scenes and animation. Presentation listens to rule-engine events. This keeps local play, AI, replays, tests, and future host-authoritative multiplayer on one deterministic rules implementation.
+
+## Card-data source policy
+
+- `db.duelmasters.us` is the canonical source for English card identity, printed stats, keywords, categories, and rules behavior.
+- Published theme-deck pages are used only to verify product deck names and card quantities.
+- Rules text is represented in code as structured keywords/effects or concise behavior summaries; copyrighted scans and artwork are not stored.
+- A card is marked `Complete` only when all listed behavior is implemented and covered by tests. `CoreKeywords` means only its mapped keyword behavior is supported; `DataOnly` means it must not be treated as fully simulated.

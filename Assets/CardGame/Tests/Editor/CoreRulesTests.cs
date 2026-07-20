@@ -102,6 +102,78 @@ namespace CardGame.Core.Tests
             Assert.That(state.WinReason, Is.EqualTo("Direct attack"));
         }
 
+        [Test]
+        public void EndTurn_FailsWhenCreatureThatMustAttackIsAble()
+        {
+            var engine = new RulesEngine();
+            var state = NewGame(engine);
+            var creature = Creature("must-attack", "Must Attack", Civilization.Fire, 1, 1000);
+            creature.Abilities = new[] { new KeywordAbility(CardKeyword.MustAttackIfAble) };
+            var attacker = Instance(900, creature);
+            attacker.EnteredBattleZoneOnTurn = 0;
+            state.ActivePlayer.BattleZone.Add(attacker);
+
+            var result = engine.EndTurn(state, 0);
+
+            Assert.That(result.Success, Is.False);
+            Assert.That(result.Error, Does.Contain("must attack"));
+        }
+
+        [Test]
+        public void EndTurn_AllowsSummoningSickMustAttackCreature()
+        {
+            var engine = new RulesEngine();
+            var state = NewGame(engine);
+            var creature = Creature("must-attack", "Must Attack", Civilization.Fire, 1, 1000);
+            creature.Abilities = new[] { new KeywordAbility(CardKeyword.MustAttackIfAble) };
+            var attacker = Instance(900, creature);
+            attacker.EnteredBattleZoneOnTurn = state.TurnNumber;
+            state.ActivePlayer.BattleZone.Add(attacker);
+
+            var result = engine.EndTurn(state, 0);
+
+            Assert.That(result.Success, Is.True);
+        }
+
+        [Test]
+        public void CannotAttackPlayers_CanStillAttackTappedCreature()
+        {
+            var engine = new RulesEngine();
+            var state = NewGame(engine);
+            var restricted = Creature("restricted", "Restricted", Civilization.Darkness, 2, 3000);
+            restricted.Abilities = new[] { new KeywordAbility(CardKeyword.CannotAttackPlayers) };
+            var attacker = Instance(900, restricted);
+            attacker.EnteredBattleZoneOnTurn = 0;
+            var defender = Instance(901, Creature("target", "Target", Civilization.Fire, 2, 2000));
+            defender.Tapped = true;
+            state.ActivePlayer.BattleZone.Add(attacker);
+            state.Opponent.BattleZone.Add(defender);
+
+            Assert.That(engine.DeclareAttack(state, 0, attacker.InstanceId, AttackTargetKind.Player).Success, Is.False);
+            Assert.That(engine.DeclareAttack(state, 0, attacker.InstanceId, AttackTargetKind.Creature, defender.InstanceId).Success, Is.True);
+        }
+
+        [Test]
+        public void DestroyAfterBattle_DestroysCreatureEvenWhenItWins()
+        {
+            var engine = new RulesEngine();
+            var state = NewGame(engine);
+            var fragile = Creature("fragile", "Fragile", Civilization.Darkness, 2, 5000);
+            fragile.Abilities = new[] { new KeywordAbility(CardKeyword.DestroyAfterBattle) };
+            var attacker = Instance(900, fragile);
+            attacker.EnteredBattleZoneOnTurn = 0;
+            var defender = Instance(901, Creature("target", "Target", Civilization.Fire, 2, 1000));
+            defender.Tapped = true;
+            state.ActivePlayer.BattleZone.Add(attacker);
+            state.Opponent.BattleZone.Add(defender);
+
+            Assert.That(engine.DeclareAttack(state, 0, attacker.InstanceId, AttackTargetKind.Creature, defender.InstanceId).Success, Is.True);
+            Assert.That(engine.DeclineBlockAndResolve(state, 1).Success, Is.True);
+
+            Assert.That(state.ActivePlayer.BattleZone, Is.Empty);
+            Assert.That(state.Opponent.BattleZone, Is.Empty);
+        }
+
         private static GameState NewGame(RulesEngine engine = null)
         {
             engine ??= new RulesEngine();
