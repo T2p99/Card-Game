@@ -188,6 +188,7 @@ namespace CardGame.Core
             string id, string name, Civilization civilization, int cost, CardType type,
             string race, int power, string setCode, string collectorNumber)
         {
+            var mediaId = CardMediaCatalog.MediaId(setCode, collectorNumber);
             return new CardDefinition
             {
                 Id = id,
@@ -200,6 +201,8 @@ namespace CardGame.Core
                 SetCode = setCode,
                 CollectorNumber = collectorNumber,
                 DataSource = CardDatabaseSource,
+                DatabaseMediaId = mediaId,
+                HasDatabaseVideo = CardMediaCatalog.HasVideo(mediaId),
                 ImplementationStatus = CardImplementationStatus.DataOnly
             };
         }
