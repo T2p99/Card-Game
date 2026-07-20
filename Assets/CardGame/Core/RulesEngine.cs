@@ -59,7 +59,8 @@ namespace CardGame.Core
             GameState state,
             int playerId,
             long cardInstanceId,
-            IReadOnlyCollection<long> manaInstanceIds)
+            IReadOnlyCollection<long> manaInstanceIds,
+            long evolutionBaseInstanceId = 0)
         {
             var turnCheck = ValidateMainAction(state, playerId);
             if (!turnCheck.Success) return turnCheck;
@@ -67,19 +68,41 @@ namespace CardGame.Core
             var player = state.Players[playerId];
             var creature = Find(player.Hand, cardInstanceId);
             if (creature == null) return RuleResult.Fail("The selected card is not in the player's hand.");
-            if (creature.Definition.Type != CardType.Creature)
-                return RuleResult.Fail("Only standard creatures are supported in the first vertical slice.");
+            if (creature.Definition.Type != CardType.Creature && creature.Definition.Type != CardType.EvolutionCreature)
+                return RuleResult.Fail("The selected card is not a creature.");
             if (creature.Definition.ImplementationStatus == CardImplementationStatus.DataOnly)
                 return RuleResult.Fail("This card's full rules are not implemented yet.");
+
+            CardInstance evolutionBase = null;
+            if (creature.Definition.Type == CardType.EvolutionCreature)
+            {
+                evolutionBase = Find(player.BattleZone, evolutionBaseInstanceId);
+                if (evolutionBase == null)
+                    return RuleResult.Fail($"Choose a {creature.Definition.EvolutionRace} in your battle zone to evolve.");
+                if (!evolutionBase.Definition.Races.Any(race =>
+                        race.Equals(creature.Definition.EvolutionRace, StringComparison.OrdinalIgnoreCase)))
+                    return RuleResult.Fail($"{creature.Definition.Name} must evolve from a {creature.Definition.EvolutionRace}.");
+            }
 
             var payment = ValidateManaPayment(player, creature.Definition, manaInstanceIds);
             if (!payment.Success) return payment;
 
             TapMana(player, manaInstanceIds);
             player.Hand.Remove(creature);
-            creature.Tapped = false;
-            creature.EnteredBattleZoneOnTurn = state.TurnNumber;
+            if (evolutionBase != null)
+            {
+                player.BattleZone.Remove(evolutionBase);
+                creature.EvolutionMaterials.Add(evolutionBase);
+                creature.Tapped = evolutionBase.Tapped;
+                creature.EnteredBattleZoneOnTurn = -1;
+            }
+            else
+            {
+                creature.Tapped = false;
+                creature.EnteredBattleZoneOnTurn = state.TurnNumber;
+            }
             player.BattleZone.Add(creature);
+            ResolveSummonAbilities(state, playerId, creature);
             return RuleResult.Ok();
         }
 
@@ -185,13 +208,15 @@ namespace CardGame.Core
                 TargetCreatureInstanceId = targetCreatureInstanceId,
                 DefendingPlayerId = state.Opponent.PlayerId
             };
+            ResolveAttackAbilities(state, playerId, attacker);
             return RuleResult.Ok();
         }
 
         public RuleResult Block(GameState state, int defendingPlayerId, long blockerInstanceId)
         {
-            if (state.PendingAttack == null) return RuleResult.Fail("There is no pending attack.");
-            if (state.PendingAttack.DefendingPlayerId != defendingPlayerId)
+            var attack = state.PendingAttack;
+            if (attack == null) return RuleResult.Fail("There is no pending attack.");
+            if (attack.DefendingPlayerId != defendingPlayerId)
                 return RuleResult.Fail("This player is not defending the pending attack.");
 
             var defender = state.Players[defendingPlayerId];
@@ -202,7 +227,8 @@ namespace CardGame.Core
                 return RuleResult.Fail("The selected creature does not have Blocker.");
 
             blocker.Tapped = true;
-            ResolveCreatureBattle(state, state.PendingAttack.AttackerInstanceId, blocker.InstanceId);
+            ResolveCreatureBattle(state, attack.AttackerInstanceId, blocker.InstanceId);
+            ResolveAfterAttackAbilities(state, attack);
             state.PendingAttack = null;
             return RuleResult.Ok();
         }
@@ -223,6 +249,7 @@ namespace CardGame.Core
                 ResolvePlayerAttack(state, attack.AttackerInstanceId, defendingPlayerId);
             }
 
+            ResolveAfterAttackAbilities(state, attack);
             state.PendingAttack = null;
             return RuleResult.Ok();
         }
@@ -471,6 +498,136 @@ namespace CardGame.Core
             }
         }
 
+        private static void ResolveSummonAbilities(GameState state, int playerId, CardInstance creature)
+        {
+            var player = state.Players[playerId];
+            var opponent = state.Players[1 - playerId];
+            CardInstance target;
+            switch (creature.Definition.Id)
+            {
+                case "dm01-082": // Meteosaur
+                    target = opponent.BattleZone.Where(card => card.Definition.Power <= 2000)
+                        .OrderByDescending(card => card.Definition.Power).FirstOrDefault();
+                    if (target != null) Destroy(opponent, target);
+                    break;
+                case "dm01-058": // Masked Horror
+                    DiscardRandom(state, opponent);
+                    break;
+                case "dm01-061": // Stinger Worm
+                    target = player.BattleZone.Where(card => card != creature)
+                        .OrderBy(card => card.Definition.Power).FirstOrDefault() ?? creature;
+                    Destroy(player, target);
+                    break;
+                case "dm01-062": // Swamp Worm
+                    target = opponent.BattleZone.OrderBy(card => card.Definition.Power).FirstOrDefault();
+                    if (target != null) Destroy(opponent, target);
+                    break;
+                case "dm01-085": // Rothus, the Traveler
+                    target = player.BattleZone.Where(card => card != creature)
+                        .OrderBy(card => card.Definition.Power).FirstOrDefault() ?? creature;
+                    Destroy(player, target);
+                    target = opponent.BattleZone.OrderBy(card => card.Definition.Power).FirstOrDefault();
+                    if (target != null) Destroy(opponent, target);
+                    break;
+                case "dm02-033": // Poison Worm
+                    target = player.BattleZone.Where(card => card != creature && card.Definition.Power <= 3000)
+                        .OrderBy(card => card.Definition.Power).FirstOrDefault();
+                    if (target == null && creature.Definition.Power <= 3000) target = creature;
+                    if (target != null) Destroy(player, target);
+                    break;
+                case "dm02-024": // Chaos Worm
+                    target = opponent.BattleZone.OrderByDescending(card => card.Definition.Power).FirstOrDefault();
+                    if (target != null) Destroy(opponent, target);
+                    break;
+            }
+        }
+
+        private static void ResolveAttackAbilities(GameState state, int playerId, CardInstance attacker)
+        {
+            var player = state.Players[playerId];
+            var opponent = state.Players[1 - playerId];
+            CardInstance target;
+            switch (attacker.Definition.Id)
+            {
+                case "dm02-023": // Amber Piercer
+                    target = player.Graveyard.FirstOrDefault(card => card.Definition.IsCreature);
+                    if (target != null)
+                    {
+                        player.Graveyard.Remove(target);
+                        player.Hand.Add(target);
+                    }
+                    break;
+                case "dm02-027": // General Dark Fiend
+                    if (player.Shields.Count > 0)
+                    {
+                        var shield = player.Shields[player.Shields.Count - 1];
+                        player.Shields.RemoveAt(player.Shields.Count - 1);
+                        player.Graveyard.Add(shield);
+                    }
+                    break;
+                case "dm02-030": // Horrid Worm
+                    DiscardRandom(state, opponent);
+                    break;
+                case "dm02-042": // Metalwing Skyterror
+                    target = opponent.BattleZone.FirstOrDefault(card => card.Definition.HasKeyword(CardKeyword.Blocker)) ??
+                        player.BattleZone.FirstOrDefault(card => card != attacker && card.Definition.HasKeyword(CardKeyword.Blocker));
+                    if (target != null)
+                    {
+                        var owner = opponent.BattleZone.Contains(target) ? opponent : player;
+                        Destroy(owner, target);
+                    }
+                    break;
+            }
+        }
+
+        private static void ResolveAfterAttackAbilities(GameState state, PendingAttack attack)
+        {
+            if (attack.TargetKind != AttackTargetKind.Player) return;
+            var owner = FindOwner(state, attack.AttackerInstanceId);
+            var attacker = owner == null ? null : Find(owner.BattleZone, attack.AttackerInstanceId);
+            if (attacker != null && attacker.Definition.Id == "dm02-032")
+                Destroy(owner, attacker);
+        }
+
+        private static int AttackPower(GameState state, PlayerState owner, CardInstance attacker)
+        {
+            var bonus = attacker.Definition.KeywordValue(CardKeyword.PowerAttacker) + attacker.TemporaryPowerAttacker;
+            switch (attacker.Definition.Id)
+            {
+                case "dm01-067":
+                    if (owner.BattleZone.Any(card => card.Definition.Races.Contains("Human"))) bonus += 2000;
+                    break;
+                case "dm01-077":
+                    if (owner.BattleZone.Any(card => card.Definition.Races.Contains("Armorloid"))) bonus += 2000;
+                    break;
+                case "dm02-034":
+                    bonus += owner.BattleZone.Count(card => card != attacker && card.Definition.Races.Contains("Human")) * 2000;
+                    break;
+                case "dm02-039":
+                    bonus += owner.BattleZone.Count(card => card != attacker && card.Tapped) * 2000;
+                    break;
+                case "dm02-041":
+                    if (owner.BattleZone.Count == 1) bonus += 4000;
+                    break;
+            }
+            return attacker.Definition.Power + bonus;
+        }
+
+        private static int BreakerCount(PlayerState owner, CardInstance attacker)
+        {
+            if (attacker.Definition.Id == "dm02-041" && owner.BattleZone.Count == 1) return 2;
+            return attacker.Definition.BreakerCount;
+        }
+
+        private static void DiscardRandom(GameState state, PlayerState player)
+        {
+            if (player.Hand.Count == 0) return;
+            var random = new Random(unchecked(state.RandomSeed * 397 ^ state.RandomActionIndex++));
+            var discarded = player.Hand[random.Next(player.Hand.Count)];
+            player.Hand.Remove(discarded);
+            player.Graveyard.Add(discarded);
+        }
+
         private static void ResolveCreatureBattle(GameState state, long attackerId, long defenderId)
         {
             var attackerOwner = FindOwner(state, attackerId);
@@ -481,9 +638,7 @@ namespace CardGame.Core
             var defender = Find(defenderOwner.BattleZone, defenderId);
             if (attacker == null || defender == null) return;
 
-            var attackerPower = attacker.Definition.Power +
-                attacker.Definition.KeywordValue(CardKeyword.PowerAttacker) +
-                attacker.TemporaryPowerAttacker;
+            var attackerPower = AttackPower(state, attackerOwner, attacker);
             var defenderPower = defender.Definition.Power;
             var attackerSlayer = attacker.Definition.HasKeyword(CardKeyword.Slayer);
             var defenderSlayer = defender.Definition.HasKeyword(CardKeyword.Slayer);
@@ -509,8 +664,8 @@ namespace CardGame.Core
                 return;
             }
 
-            var breakerCount = attacker.TemporaryDoubleBreaker ?
-                Math.Max(2, attacker.Definition.BreakerCount) : attacker.Definition.BreakerCount;
+            var breakerCount = BreakerCount(state.ActivePlayer, attacker);
+            if (attacker.TemporaryDoubleBreaker) breakerCount = Math.Max(2, breakerCount);
             var shieldsToBreak = Math.Min(breakerCount, defender.Shields.Count);
             for (var i = 0; i < shieldsToBreak; i++)
             {
@@ -526,6 +681,12 @@ namespace CardGame.Core
         {
             owner.BattleZone.Remove(card);
             card.Tapped = false;
+            foreach (var material in card.EvolutionMaterials)
+            {
+                material.Tapped = false;
+                owner.Graveyard.Add(material);
+            }
+            card.EvolutionMaterials.Clear();
             owner.Graveyard.Add(card);
         }
 
