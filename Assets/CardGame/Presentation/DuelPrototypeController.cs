@@ -141,11 +141,15 @@ namespace CardGame.Presentation
             var panelWidth = 280f;
             var boardWidth = _uiWidth - panelWidth;
             var handHeight = Mathf.Clamp(_uiHeight * 0.24f, 170f, 230f);
-            var battleHeight = Mathf.Max(115f, (_uiHeight - 42f - 34f - 42f - handHeight - 54f) / 2f);
+            var hiddenZoneHeight = Mathf.Clamp(_uiHeight * 0.105f, 82f, 100f);
+            var fixedHeight = 50f + 36f + hiddenZoneHeight * 2f + 42f + handHeight + 40f;
+            var battleHeight = Mathf.Max(105f, (_uiHeight - fixedHeight) / 2f);
             var y = 50f;
 
             DrawPlayerSummary(_state.Players[ComputerId], new Rect(12, y, boardWidth - 24, 32), "COMPUTER — Kokujo's Darkness Deck");
             y += 36f;
+            DrawDeckShieldsAndHiddenHand(_state.Players[ComputerId], new Rect(12, y, boardWidth - 24, hiddenZoneHeight), true);
+            y += hiddenZoneHeight + 6f;
             DrawCardRow(_state.Players[ComputerId].BattleZone, new Rect(12, y, boardWidth - 24, battleHeight),
                 ref _computerBattleScroll, card =>
                 {
@@ -164,6 +168,8 @@ namespace CardGame.Presentation
                 }, _selectedCreature, false, "Your Battle Zone");
 
             y += battleHeight + 6f;
+            DrawDeckShieldsAndHiddenHand(_state.Players[HumanId], new Rect(12, y, boardWidth - 24, hiddenZoneHeight), false);
+            y += hiddenZoneHeight + 6f;
             DrawManaRow(_state.Players[HumanId], new Rect(12, y, boardWidth - 24, 42));
             y += 48f;
             DrawCardRow(_state.Players[HumanId].Hand, new Rect(12, y, boardWidth - 24,
@@ -176,6 +182,50 @@ namespace CardGame.Presentation
                         _selectedCreature = null;
                     }
                 }, _selectedHand, false, "Your Hand");
+        }
+
+        private void DrawDeckShieldsAndHiddenHand(PlayerState player, Rect area, bool hideHand)
+        {
+            GUI.backgroundColor = new Color(0.18f, 0.21f, 0.27f);
+            GUI.Box(area, GUIContent.none);
+            var cardHeight = Mathf.Max(52f, area.height - 28f);
+            var cardWidth = cardHeight * 0.67f;
+            var top = area.y + 23f;
+            var x = area.x + 10f;
+
+            GUI.color = Color.white;
+            GUI.Label(new Rect(x, area.y + 3f, 120f, 20f), hideHand ? "Opponent Deck" : "Your Deck");
+            DrawCardBack(new Rect(x + 4f, top - 4f, cardWidth, cardHeight), string.Empty);
+            DrawCardBack(new Rect(x + 2f, top - 2f, cardWidth, cardHeight), string.Empty);
+            DrawCardBack(new Rect(x, top, cardWidth, cardHeight), player.Deck.Count.ToString());
+
+            x += cardWidth + 28f;
+            GUI.Label(new Rect(x, area.y + 3f, 180f, 20f), $"Shields ({player.Shields.Count})");
+            for (var i = 0; i < player.Shields.Count; i++)
+            {
+                DrawCardBack(new Rect(x + i * (cardWidth + 7f), top, cardWidth, cardHeight), string.Empty);
+            }
+
+            if (!hideHand) return;
+            x += Mathf.Max(5, player.Shields.Count) * (cardWidth + 7f) + 30f;
+            GUI.Label(new Rect(x, area.y + 3f, 180f, 20f), $"Opponent Hand ({player.Hand.Count})");
+            var shownCards = Mathf.Min(player.Hand.Count, 8);
+            for (var i = 0; i < shownCards; i++)
+            {
+                DrawCardBack(new Rect(x + i * (cardWidth * 0.48f), top, cardWidth, cardHeight), string.Empty);
+            }
+        }
+
+        private static void DrawCardBack(Rect rect, string count)
+        {
+            GUI.backgroundColor = new Color(0.34f, 0.11f, 0.07f);
+            GUI.Box(rect, GUIContent.none);
+            GUI.backgroundColor = new Color(0.08f, 0.14f, 0.22f);
+            GUI.Box(new Rect(rect.x + 4f, rect.y + 4f, rect.width - 8f, rect.height - 8f), GUIContent.none);
+            GUI.color = new Color(0.95f, 0.64f, 0.18f);
+            GUI.Label(new Rect(rect.x + 5f, rect.y + rect.height * 0.34f, rect.width - 10f, 22f),
+                string.IsNullOrEmpty(count) ? "DM" : count);
+            GUI.color = Color.white;
         }
 
         private static void DrawPlayerSummary(PlayerState player, Rect rect, string label)
