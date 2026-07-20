@@ -1,0 +1,64 @@
+name: Import licensed starter media
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - .github/workflows/import-licensed-media.yml
+
+permissions:
+  contents: write
+
+jobs:
+  import-media:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Install WebP and Git LFS tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes webp git-lfs
+          git lfs install --local
+
+      - name: Download and convert licensed card scans
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p Assets/Resources/CardGame/CardArt
+          image_ids=(
+            0159 0077 0080 0081 0083 0084 0164 0085 0087 0166 0090 0091 0167 0092 0168 0095 0096 0097 0098
+            0148 0056 0057 0058 0149 0061 0062 0063 0152 0064 0066 0154 0155 0157 0068 0158 0070 0071 0072 0073 0075 0076
+          )
+          for id in "${image_ids[@]}"; do
+            curl --fail --location --retry 4 --user-agent "Card-Game licensed asset importer" \
+              "https://img.duelmasters.us/${id}.webp" --output "/tmp/${id}.webp"
+            dwebp -quiet "/tmp/${id}.webp" -o "Assets/Resources/CardGame/CardArt/${id}.png"
+          done
+          test "$(find Assets/Resources/CardGame/CardArt -name '*.png' | wc -l)" -eq 41
+
+      - name: Download licensed creature animations
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p Assets/Resources/CardGame/Videos
+          video_ids=(0056 0077 0080 0087 0090 0095 0155 0157 0168)
+          for id in "${video_ids[@]}"; do
+            curl --fail --location --retry 4 --user-agent "Card-Game licensed asset importer" \
+              "https://media.duelmasters.us/${id}.mp4" --output "Assets/Resources/CardGame/Videos/${id}.mp4"
+          done
+          test "$(find Assets/Resources/CardGame/Videos -name '*.mp4' | wc -l)" -eq 9
+
+      - name: Commit imported assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          git lfs track "Assets/Resources/CardGame/Videos/*.mp4"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .gitattributes Assets/Resources/CardGame
+          git commit -m "Import licensed starter card media"
+          git push
