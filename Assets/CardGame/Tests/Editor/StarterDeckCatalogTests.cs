@@ -54,5 +54,19 @@ namespace CardGame.Core.Tests
             Assert.That(StarterDeckCatalog.Cards["dm02-029"].HasKeyword(CardKeyword.Blocker), Is.True);
             Assert.That(StarterDeckCatalog.Cards["dm01-073"].ImplementationStatus, Is.EqualTo(CardImplementationStatus.Complete));
         }
+
+        [Test]
+        public void Catalog_MapsDatabaseImagesAndAttackVideos()
+        {
+            var brawler = StarterDeckCatalog.Cards["dm01-070"];
+            var braidClaw = StarterDeckCatalog.Cards["dm01-074"];
+
+            Assert.That(brawler.DatabaseMediaId, Is.EqualTo(80));
+            Assert.That(brawler.DatabaseImageUrl, Is.EqualTo("https://img.duelmasters.us/0080.webp"));
+            Assert.That(brawler.HasDatabaseVideo, Is.True);
+            Assert.That(brawler.DatabaseVideoUrl, Is.EqualTo("https://media.duelmasters.us/0080.mp4"));
+            Assert.That(braidClaw.DatabaseMediaId, Is.EqualTo(84));
+            Assert.That(braidClaw.HasDatabaseVideo, Is.False);
+        }
     }
 }
