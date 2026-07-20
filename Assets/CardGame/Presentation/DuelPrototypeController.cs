@@ -261,7 +261,7 @@ namespace CardGame.Presentation
                 var mana = player.Mana[i];
                 var cardRect = new Rect(inner.x + i * (cardWidth + 7f), inner.y, cardWidth, cardHeight);
                 GUI.backgroundColor = CivilizationColor(mana.Definition);
-                if (GUI.Button(cardRect, GUIContent.none))
+                if (GUI.Button(cardRect, GUIContent.none) && !_showHandCardViewer && !_showVideo)
                     OpenFaceUpCardViewer(mana, player.Mana, label);
 
                 var artRect = new Rect(cardRect.x + 3f, cardRect.y + 3f, cardRect.width - 6f, cardRect.height - 6f);
@@ -310,9 +310,19 @@ namespace CardGame.Presentation
         private void DrawCardButton(CardInstance card, Rect rect, bool selected, bool faceDown, Action clicked)
         {
             GUI.backgroundColor = selected ? new Color(1f, 0.75f, 0.15f) : CivilizationColor(card.Definition);
-            if (GUI.Button(rect, GUIContent.none)) clicked();
+            if (GUI.Button(rect, GUIContent.none) && !_showHandCardViewer && !_showVideo) clicked();
 
+            var previousMatrix = GUI.matrix;
             var inset = new Rect(rect.x + 4, rect.y + 4, rect.width - 8, rect.height - 8);
+            if (card.Tapped)
+            {
+                var turnedHeight = Mathf.Max(20f, rect.width - 8f);
+                var turnedWidth = turnedHeight * 0.66f;
+                inset = new Rect(rect.center.x - turnedWidth * 0.5f, rect.center.y - turnedHeight * 0.5f,
+                    turnedWidth, turnedHeight);
+                GUIUtility.RotateAroundPivot(90f, rect.center);
+            }
+
             if (!faceDown && _cardArt.TryGetValue(card.Definition.Id, out var texture))
             {
                 GUI.DrawTexture(inset, texture, ScaleMode.ScaleToFit);
@@ -329,10 +339,11 @@ namespace CardGame.Presentation
                 }
             }
 
+            GUI.matrix = previousMatrix;
             if (card.Tapped)
             {
-                GUI.color = new Color(0, 0, 0, 0.65f);
-                GUI.Box(inset, "TAPPED");
+                GUI.color = new Color(0, 0, 0, 0.72f);
+                GUI.Box(new Rect(rect.x + 7f, rect.center.y - 13f, rect.width - 14f, 26f), "TURNED");
             }
             GUI.color = Color.white;
         }
@@ -355,16 +366,46 @@ namespace CardGame.Presentation
                 GUILayout.Space(8);
             }
 
+            if (_showHandCardViewer || _showVideo)
+            {
+                GUILayout.FlexibleSpace();
+                GUILayout.Label("Close the card viewer before choosing a board action.");
+                GUILayout.EndArea();
+                return;
+            }
+
             GUI.enabled = !_busy && !_state.IsFinished && _state.ActivePlayerId == HumanId;
             if (_selectedHand != null)
             {
                 if (GUILayout.Button("Open Selected Card", GUILayout.Height(38))) _showHandCardViewer = true;
             }
-            if (_selectedCreature != null && GUILayout.Button("Attack Player", GUILayout.Height(38)))
-                StartHumanAttack(AttackTargetKind.Player, 0);
-            if (_selectedCreature != null && _selectedOpponentCreature != null &&
-                GUILayout.Button($"Attack {_selectedOpponentCreature.Definition.Name}", GUILayout.Height(44)))
-                StartHumanAttack(AttackTargetKind.Creature, _selectedOpponentCreature.InstanceId);
+            if (_selectedCreature != null)
+            {
+                if (_selectedCreature.Tapped)
+                {
+                    GUILayout.Label("TURNED — this creature cannot attack again this turn.");
+                }
+                else
+                {
+                    if (GUILayout.Button("Attack Player", GUILayout.Height(38)))
+                        StartHumanAttack(AttackTargetKind.Player, 0);
+
+                    var canAttackUntapped = _selectedCreature.Definition.HasKeyword(CardKeyword.AttackUntappedCreature);
+                    var legalCreatureTargets = _state.Players[ComputerId].BattleZone
+                        .Where(card => card.Tapped || canAttackUntapped).ToList();
+                    foreach (var target in legalCreatureTargets)
+                    {
+                        if (GUILayout.Button($"Attack {target.Definition.Name} — {target.Definition.Power}", GUILayout.Height(40)))
+                            StartHumanAttack(AttackTargetKind.Creature, target.InstanceId);
+                    }
+
+                    var readyBlockers = EligibleBlockers(_state.Players[ComputerId]).Count();
+                    if (readyBlockers > 0)
+                        GUILayout.Label($"Opponent has {readyBlockers} ready Blocker(s). Attack the player or a legal turned creature; the opponent chooses which ready Blocker intercepts.");
+                    if (legalCreatureTargets.Count == 0 && _state.Players[ComputerId].BattleZone.Count > 0)
+                        GUILayout.Label("No opposing creature is currently a legal attack target. Normally, only turned creatures can be attacked.");
+                }
+            }
             if (GUILayout.Button("End Turn", GUILayout.Height(38))) EndHumanTurn();
             GUI.enabled = true;
 
