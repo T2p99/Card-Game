@@ -55,6 +55,7 @@ The first vertical slice includes:
 - the exact card quantities from the English Shobu's Fire and Kokujo's Darkness 40-card theme decks;
 - database-backed identity, civilization, cost, type, race, power, set, and collector-number fields for those cards;
 - explicit implementation-status metadata so incomplete card effects cannot be mistaken for supported behavior.
+- targeted spell resolution, temporary attack buffs, deterministic random discard, and spell shield-trigger casting for the first starter-deck spell batch.
 
 It does not yet include:
 

@@ -29,7 +29,8 @@ namespace CardGame.Core
                 ActivePlayerId = starter,
                 StartingPlayerId = starter,
                 TurnNumber = 1,
-                Phase = GamePhase.Main
+                Phase = GamePhase.Main,
+                RandomSeed = seed
             };
 
             DealOpeningCards(first);
@@ -68,6 +69,8 @@ namespace CardGame.Core
             if (creature == null) return RuleResult.Fail("The selected card is not in the player's hand.");
             if (creature.Definition.Type != CardType.Creature)
                 return RuleResult.Fail("Only standard creatures are supported in the first vertical slice.");
+            if (creature.Definition.ImplementationStatus == CardImplementationStatus.DataOnly)
+                return RuleResult.Fail("This card's full rules are not implemented yet.");
 
             var payment = ValidateManaPayment(player, creature.Definition, manaInstanceIds);
             if (!payment.Success) return payment;
@@ -77,6 +80,66 @@ namespace CardGame.Core
             creature.Tapped = false;
             creature.EnteredBattleZoneOnTurn = state.TurnNumber;
             player.BattleZone.Add(creature);
+            return RuleResult.Ok();
+        }
+
+        public RuleResult CastSpell(
+            GameState state,
+            int playerId,
+            long cardInstanceId,
+            IReadOnlyCollection<long> manaInstanceIds,
+            long targetInstanceId = 0)
+        {
+            var turnCheck = ValidateMainAction(state, playerId);
+            if (!turnCheck.Success) return turnCheck;
+
+            var player = state.Players[playerId];
+            var spell = Find(player.Hand, cardInstanceId);
+            if (spell == null) return RuleResult.Fail("The selected card is not in the player's hand.");
+            if (spell.Definition.Type != CardType.Spell) return RuleResult.Fail("The selected card is not a spell.");
+            if (spell.Definition.ImplementationStatus == CardImplementationStatus.DataOnly)
+                return RuleResult.Fail("This card's full rules are not implemented yet.");
+
+            var targetCheck = ValidateSpellTarget(state, playerId, spell.Definition, targetInstanceId);
+            if (!targetCheck.Success) return targetCheck;
+            var payment = ValidateManaPayment(player, spell.Definition, manaInstanceIds);
+            if (!payment.Success) return payment;
+
+            TapMana(player, manaInstanceIds);
+            player.Hand.Remove(spell);
+            ResolveSpellEffects(state, playerId, spell.Definition, targetInstanceId);
+            player.Graveyard.Add(spell);
+            return RuleResult.Ok();
+        }
+
+        public RuleResult CastShieldTrigger(
+            GameState state,
+            int defendingPlayerId,
+            long cardInstanceId,
+            long targetInstanceId = 0)
+        {
+            if (state.IsFinished) return RuleResult.Fail("The game is already finished.");
+            if (defendingPlayerId < 0 || defendingPlayerId >= state.Players.Length)
+                return RuleResult.Fail("Unknown player.");
+            if (defendingPlayerId == state.ActivePlayerId)
+                return RuleResult.Fail("Only the defending player can cast a pending shield trigger.");
+
+            var player = state.Players[defendingPlayerId];
+            var spell = Find(state.PendingShieldTriggers, cardInstanceId);
+            if (spell == null || !player.Hand.Contains(spell))
+                return RuleResult.Fail("The selected card is not a pending shield trigger.");
+            if (spell.Definition.Type != CardType.Spell)
+                return RuleResult.Fail("Creature shield triggers are not supported yet.");
+            if (spell.Definition.ImplementationStatus == CardImplementationStatus.DataOnly)
+                return RuleResult.Fail("This card's full rules are not implemented yet.");
+
+            var targetCheck = ValidateSpellTarget(state, defendingPlayerId, spell.Definition, targetInstanceId);
+            if (!targetCheck.Success) return targetCheck;
+
+            state.PendingShieldTriggers.Remove(spell);
+            player.Hand.Remove(spell);
+            ResolveSpellEffects(state, defendingPlayerId, spell.Definition, targetInstanceId);
+            player.Graveyard.Add(spell);
             return RuleResult.Ok();
         }
 
@@ -185,6 +248,12 @@ namespace CardGame.Core
                 if (timingAllowsAttack && (canAttackPlayer || canAttackCreature) &&
                     creature.Definition.HasKeyword(CardKeyword.MustAttackIfAble))
                     return RuleResult.Fail($"{creature.Definition.Name} must attack this turn if able.");
+            }
+
+            foreach (var creature in state.ActivePlayer.BattleZone)
+            {
+                creature.TemporaryPowerAttacker = 0;
+                creature.TemporaryDoubleBreaker = false;
             }
 
             state.ActivePlayerId = 1 - state.ActivePlayerId;
@@ -313,6 +382,95 @@ namespace CardGame.Core
             foreach (var id in ids) Find(player.Mana, id).Tapped = true;
         }
 
+        private static RuleResult ValidateSpellTarget(
+            GameState state,
+            int playerId,
+            CardDefinition spell,
+            long targetInstanceId)
+        {
+            foreach (var effect in spell.SpellEffects)
+            {
+                CardInstance target;
+                switch (effect.Kind)
+                {
+                    case SpellEffectKind.DestroyOpponentCreature:
+                        target = Find(state.Players[1 - playerId].BattleZone, targetInstanceId);
+                        if (target == null) return RuleResult.Fail("Choose an opponent's creature.");
+                        break;
+                    case SpellEffectKind.DestroyOpponentUntappedCreature:
+                        target = Find(state.Players[1 - playerId].BattleZone, targetInstanceId);
+                        if (target == null || target.Tapped)
+                            return RuleResult.Fail("Choose an opponent's untapped creature.");
+                        break;
+                    case SpellEffectKind.DestroyOpponentCreatureAtMostPower:
+                        target = Find(state.Players[1 - playerId].BattleZone, targetInstanceId);
+                        if (target == null || target.Definition.Power > effect.Value)
+                            return RuleResult.Fail($"Choose an opponent's creature with power {effect.Value} or less.");
+                        break;
+                    case SpellEffectKind.ReturnOwnCreatureFromGraveyard:
+                        target = Find(state.Players[playerId].Graveyard, targetInstanceId);
+                        if (target == null || !target.Definition.IsCreature)
+                            return RuleResult.Fail("Choose a creature in your graveyard.");
+                        break;
+                    case SpellEffectKind.GrantTemporaryPowerAttacker:
+                    case SpellEffectKind.GrantTemporaryDoubleBreaker:
+                        target = Find(state.Players[playerId].BattleZone, targetInstanceId);
+                        if (target == null) return RuleResult.Fail("Choose one of your creatures.");
+                        break;
+                }
+            }
+
+            return RuleResult.Ok();
+        }
+
+        private static void ResolveSpellEffects(
+            GameState state,
+            int playerId,
+            CardDefinition spell,
+            long targetInstanceId)
+        {
+            var player = state.Players[playerId];
+            var opponent = state.Players[1 - playerId];
+            foreach (var effect in spell.SpellEffects)
+            {
+                CardInstance target;
+                switch (effect.Kind)
+                {
+                    case SpellEffectKind.DestroyOpponentCreature:
+                    case SpellEffectKind.DestroyOpponentUntappedCreature:
+                    case SpellEffectKind.DestroyOpponentCreatureAtMostPower:
+                        target = Find(opponent.BattleZone, targetInstanceId);
+                        if (target != null) Destroy(opponent, target);
+                        break;
+                    case SpellEffectKind.ReturnOwnCreatureFromGraveyard:
+                        target = Find(player.Graveyard, targetInstanceId);
+                        if (target != null)
+                        {
+                            player.Graveyard.Remove(target);
+                            player.Hand.Add(target);
+                        }
+                        break;
+                    case SpellEffectKind.RandomOpponentDiscard:
+                        if (opponent.Hand.Count > 0)
+                        {
+                            var random = new Random(unchecked(state.RandomSeed * 397 ^ state.RandomActionIndex++));
+                            var discarded = opponent.Hand[random.Next(opponent.Hand.Count)];
+                            opponent.Hand.Remove(discarded);
+                            opponent.Graveyard.Add(discarded);
+                        }
+                        break;
+                    case SpellEffectKind.GrantTemporaryPowerAttacker:
+                        target = Find(player.BattleZone, targetInstanceId);
+                        if (target != null) target.TemporaryPowerAttacker += effect.Value;
+                        break;
+                    case SpellEffectKind.GrantTemporaryDoubleBreaker:
+                        target = Find(player.BattleZone, targetInstanceId);
+                        if (target != null) target.TemporaryDoubleBreaker = true;
+                        break;
+                }
+            }
+        }
+
         private static void ResolveCreatureBattle(GameState state, long attackerId, long defenderId)
         {
             var attackerOwner = FindOwner(state, attackerId);
@@ -323,7 +481,9 @@ namespace CardGame.Core
             var defender = Find(defenderOwner.BattleZone, defenderId);
             if (attacker == null || defender == null) return;
 
-            var attackerPower = attacker.Definition.Power + attacker.Definition.KeywordValue(CardKeyword.PowerAttacker);
+            var attackerPower = attacker.Definition.Power +
+                attacker.Definition.KeywordValue(CardKeyword.PowerAttacker) +
+                attacker.TemporaryPowerAttacker;
             var defenderPower = defender.Definition.Power;
             var attackerSlayer = attacker.Definition.HasKeyword(CardKeyword.Slayer);
             var defenderSlayer = defender.Definition.HasKeyword(CardKeyword.Slayer);
@@ -349,7 +509,9 @@ namespace CardGame.Core
                 return;
             }
 
-            var shieldsToBreak = Math.Min(attacker.Definition.BreakerCount, defender.Shields.Count);
+            var breakerCount = attacker.TemporaryDoubleBreaker ?
+                Math.Max(2, attacker.Definition.BreakerCount) : attacker.Definition.BreakerCount;
+            var shieldsToBreak = Math.Min(breakerCount, defender.Shields.Count);
             for (var i = 0; i < shieldsToBreak; i++)
             {
                 var shield = defender.Shields[defender.Shields.Count - 1];

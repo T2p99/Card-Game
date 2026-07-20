@@ -6,6 +6,8 @@ Private, non-commercial Duel Masters fan simulator built with Unity 6.5 for Andr
 
 The first vertical slice implements the English TCG core rules as a deterministic C# engine. It now includes the exact 40-card lists for Shobu's Fire Deck and Kokujo's Darkness Deck, with database-backed identity, stats, and progressively implemented rule fields. Each card is marked data-only, core-keyword supported, or complete so incomplete effects cannot be mistaken for working behavior.
 
+Implemented starter spells currently include Burning Power, Crimson Hammer, Magma Gazer, Tornado Flame, Dark Reversal, Death Smoke, Ghost Touch, and Terror Pit, including their target restrictions and applicable shield triggers.
+
 ## Open locally
 
 1. Clone this repository.

@@ -23,6 +23,8 @@ namespace CardGame.Core
         public CardDefinition Definition = new CardDefinition();
         public bool Tapped;
         public int EnteredBattleZoneOnTurn = -1;
+        public int TemporaryPowerAttacker;
+        public bool TemporaryDoubleBreaker;
     }
 
     [Serializable]
@@ -59,6 +61,8 @@ namespace CardGame.Core
         public string WinReason = string.Empty;
         public PendingAttack PendingAttack;
         public List<CardInstance> PendingShieldTriggers = new List<CardInstance>();
+        public int RandomSeed;
+        public int RandomActionIndex;
 
         public PlayerState ActivePlayer => Players[ActivePlayerId];
         public PlayerState Opponent => Players[1 - ActivePlayerId];

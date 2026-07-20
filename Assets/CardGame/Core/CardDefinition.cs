@@ -45,6 +45,30 @@ namespace CardGame.Core
         Complete
     }
 
+    public enum SpellEffectKind
+    {
+        DestroyOpponentCreature,
+        DestroyOpponentUntappedCreature,
+        DestroyOpponentCreatureAtMostPower,
+        ReturnOwnCreatureFromGraveyard,
+        RandomOpponentDiscard,
+        GrantTemporaryPowerAttacker,
+        GrantTemporaryDoubleBreaker
+    }
+
+    [Serializable]
+    public sealed class SpellEffectDefinition
+    {
+        public SpellEffectKind Kind;
+        public int Value;
+
+        public SpellEffectDefinition(SpellEffectKind kind, int value = 0)
+        {
+            Kind = kind;
+            Value = value;
+        }
+    }
+
     [Serializable]
     public sealed class KeywordAbility
     {
@@ -69,6 +93,7 @@ namespace CardGame.Core
         public string[] Races = Array.Empty<string>();
         public int Power;
         public KeywordAbility[] Abilities = Array.Empty<KeywordAbility>();
+        public SpellEffectDefinition[] SpellEffects = Array.Empty<SpellEffectDefinition>();
         public string RulesText = string.Empty;
         public string SetCode = string.Empty;
         public string CollectorNumber = string.Empty;

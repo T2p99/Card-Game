@@ -202,7 +202,8 @@ namespace CardGame.Core.Tests
                 Civilizations = new[] { civilization },
                 Cost = cost,
                 Type = CardType.Creature,
-                Power = power
+                Power = power,
+                ImplementationStatus = CardImplementationStatus.Complete
             };
         }
 

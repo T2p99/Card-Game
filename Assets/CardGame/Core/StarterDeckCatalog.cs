@@ -131,6 +131,8 @@ namespace CardGame.Core
             Configure(cards, "dm01-077", "Gains +2000 power while attacking if you control an Armorloid.", CardImplementationStatus.DataOnly);
             Configure(cards, "dm02-041", "When it is your only creature, gains power attacker +4000 and double breaker.", CardImplementationStatus.DataOnly);
             Configure(cards, "dm01-081", "One of your creatures gains power attacker +4000 and double breaker for the turn.", CardImplementationStatus.DataOnly);
+            Configure(cards, "dm01-088", "Shield trigger; destroy an opposing creature with power 4000 or less.", CardImplementationStatus.Complete,
+                new KeywordAbility(CardKeyword.ShieldTrigger));
 
             Configure(cards, "dm02-023", "When it attacks, you may return a creature from your graveyard to your hand.", CardImplementationStatus.DataOnly);
             Configure(cards, "dm01-046", "Blocker; cannot attack; destroy it after it battles.", CardImplementationStatus.CoreKeywords,
@@ -155,6 +157,27 @@ namespace CardGame.Core
             Configure(cards, "dm02-029", "Blocker; cannot attack players.", CardImplementationStatus.Complete,
                 new KeywordAbility(CardKeyword.Blocker),
                 new KeywordAbility(CardKeyword.CannotAttackPlayers));
+
+            Configure(cards, "dm01-063", "Shield trigger; destroy an opposing creature.", CardImplementationStatus.Complete,
+                new KeywordAbility(CardKeyword.ShieldTrigger));
+
+            SetEffects(cards, "dm01-071", CardImplementationStatus.Complete,
+                new SpellEffectDefinition(SpellEffectKind.GrantTemporaryPowerAttacker, 2000));
+            SetEffects(cards, "dm01-073", CardImplementationStatus.Complete,
+                new SpellEffectDefinition(SpellEffectKind.DestroyOpponentCreatureAtMostPower, 2000));
+            SetEffects(cards, "dm01-081", CardImplementationStatus.Complete,
+                new SpellEffectDefinition(SpellEffectKind.GrantTemporaryPowerAttacker, 4000),
+                new SpellEffectDefinition(SpellEffectKind.GrantTemporaryDoubleBreaker));
+            SetEffects(cards, "dm01-088", CardImplementationStatus.Complete,
+                new SpellEffectDefinition(SpellEffectKind.DestroyOpponentCreatureAtMostPower, 4000));
+            SetEffects(cards, "dm01-052", CardImplementationStatus.Complete,
+                new SpellEffectDefinition(SpellEffectKind.ReturnOwnCreatureFromGraveyard));
+            SetEffects(cards, "dm01-053", CardImplementationStatus.Complete,
+                new SpellEffectDefinition(SpellEffectKind.DestroyOpponentUntappedCreature));
+            SetEffects(cards, "dm01-054", CardImplementationStatus.Complete,
+                new SpellEffectDefinition(SpellEffectKind.RandomOpponentDiscard));
+            SetEffects(cards, "dm01-063", CardImplementationStatus.Complete,
+                new SpellEffectDefinition(SpellEffectKind.DestroyOpponentCreature));
 
             return cards;
         }
@@ -197,6 +220,17 @@ namespace CardGame.Core
             card.RulesText = rulesText;
             card.ImplementationStatus = status;
             card.Abilities = abilities;
+        }
+
+        private static void SetEffects(
+            IDictionary<string, CardDefinition> cards,
+            string id,
+            CardImplementationStatus status,
+            params SpellEffectDefinition[] effects)
+        {
+            var card = cards[id];
+            card.SpellEffects = effects;
+            card.ImplementationStatus = status;
         }
     }
 }
