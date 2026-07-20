@@ -91,6 +91,7 @@ namespace CardGame.Core
         public int Cost;
         public CardType Type;
         public string[] Races = Array.Empty<string>();
+        public string EvolutionRace = string.Empty;
         public int Power;
         public KeywordAbility[] Abilities = Array.Empty<KeywordAbility>();
         public SpellEffectDefinition[] SpellEffects = Array.Empty<SpellEffectDefinition>();
