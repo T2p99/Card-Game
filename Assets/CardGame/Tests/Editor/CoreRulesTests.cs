@@ -103,6 +103,25 @@ namespace CardGame.Core.Tests
         }
 
         [Test]
+        public void CreatureTurnsWhenItAttacksAndCannotAttackAgainThatTurn()
+        {
+            var engine = new RulesEngine();
+            var state = NewGame(engine);
+            var attacker = Instance(900, Creature("attacker", "Attacker", Civilization.Fire, 2, 2000));
+            attacker.EnteredBattleZoneOnTurn = 0;
+            state.ActivePlayer.BattleZone.Add(attacker);
+            state.Opponent.Shields.Add(Instance(901, Creature("shield", "Shield", Civilization.Darkness, 1, 1000)));
+
+            Assert.That(engine.DeclareAttack(state, 0, attacker.InstanceId, AttackTargetKind.Player).Success, Is.True);
+            Assert.That(attacker.Tapped, Is.True);
+            Assert.That(engine.DeclineBlockAndResolve(state, 1).Success, Is.True);
+
+            var secondAttack = engine.DeclareAttack(state, 0, attacker.InstanceId, AttackTargetKind.Player);
+            Assert.That(secondAttack.Success, Is.False);
+            Assert.That(secondAttack.Error, Does.Contain("tapped"));
+        }
+
+        [Test]
         public void EndTurn_FailsWhenCreatureThatMustAttackIsAble()
         {
             var engine = new RulesEngine();
