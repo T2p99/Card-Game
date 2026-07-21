@@ -72,6 +72,16 @@ namespace CardGame.Core
         {
             var cards = new Dictionary<string, CardDefinition>(StringComparer.OrdinalIgnoreCase);
 
+            // DM-01 implementation batch 1: reusable keyword, draw, mana and mass-tap families.
+            Add(cards, C("dm01-s02", "Urth, Purifying Elemental", Civilization.Light, 6, CardType.Creature, "Angel Command", 6000, "DM-01", "S2/S10"));
+            Add(cards, C("dm01-s04", "King Depthcon", Civilization.Water, 7, CardType.Creature, "Leviathan", 6000, "DM-01", "S4/S10"));
+            Add(cards, C("dm01-006", "Holy Awe", Civilization.Light, 6, CardType.Spell, null, 0, "DM-01", "6/110"));
+            Add(cards, C("dm01-023", "Aqua Hulcus", Civilization.Water, 3, CardType.Creature, "Liquid People", 2000, "DM-01", "23/110"));
+            Add(cards, C("dm01-027", "Brain Serum", Civilization.Water, 4, CardType.Spell, null, 0, "DM-01", "27/110"));
+            Add(cards, C("dm01-034", "King Ripped-Hide", Civilization.Water, 7, CardType.Creature, "Leviathan", 5000, "DM-01", "34/110"));
+            Add(cards, C("dm01-090", "Bronze-Arm Tribe", Civilization.Nature, 3, CardType.Creature, "Beast Folk", 1000, "DM-01", "90/110"));
+            Add(cards, C("dm01-110", "Ultimate Force", Civilization.Nature, 5, CardType.Spell, null, 0, "DM-01", "110/110"));
+
             Add(cards, C("dm02-034", "Armored Cannon Balbaro", Civilization.Fire, 3, CardType.EvolutionCreature, "Human", 3000, "DM-02", "34/55"));
             Add(cards, C("dm01-067", "Armored Walker Urherion", Civilization.Fire, 4, CardType.Creature, "Armorloid", 3000, "DM-01", "67/110"));
             Add(cards, C("dm01-070", "Brawler Zyler", Civilization.Fire, 2, CardType.Creature, "Human", 1000, "DM-01", "70/110"));
@@ -114,6 +124,30 @@ namespace CardGame.Core
             Add(cards, C("dm01-063", "Terror Pit", Civilization.Darkness, 6, CardType.Spell, null, 0, "DM-01", "63/110"));
             Add(cards, C("dm01-065", "Wandering Braineater", Civilization.Darkness, 2, CardType.Creature, "Living Dead", 2000, "DM-01", "65/110"));
             Add(cards, C("dm01-066", "Writhing Bone Ghoul", Civilization.Darkness, 2, CardType.Creature, "Living Dead", 2000, "DM-01", "66/110"));
+
+            Configure(cards, "dm01-s02", "Double breaker. At the end of each of your turns, you may untap this creature.", CardImplementationStatus.CoreKeywords,
+                new KeywordAbility(CardKeyword.DoubleBreaker),
+                new KeywordAbility(CardKeyword.UntapAtEndOfTurn));
+            Configure(cards, "dm01-s04", "Double breaker. This creature can't be blocked.", CardImplementationStatus.Complete,
+                new KeywordAbility(CardKeyword.DoubleBreaker),
+                new KeywordAbility(CardKeyword.Unblockable));
+            Configure(cards, "dm01-006", "Shield trigger. Tap all your opponent's creatures in the battle zone.", CardImplementationStatus.Complete,
+                new KeywordAbility(CardKeyword.ShieldTrigger));
+            SetEffects(cards, "dm01-006", CardImplementationStatus.Complete,
+                new SpellEffectDefinition(SpellEffectKind.TapAllOpponentCreatures));
+            Configure(cards, "dm01-023", "When you put this creature into the battle zone, you may draw a card.", CardImplementationStatus.CoreKeywords);
+            cards["dm01-023"].SummonEffects = new[] { new SummonEffectDefinition(SummonEffectKind.DrawCards, 1) };
+            Configure(cards, "dm01-027", "Shield trigger. Draw up to 2 cards.", CardImplementationStatus.CoreKeywords,
+                new KeywordAbility(CardKeyword.ShieldTrigger));
+            SetEffects(cards, "dm01-027", CardImplementationStatus.CoreKeywords,
+                new SpellEffectDefinition(SpellEffectKind.DrawCards, 2));
+            Configure(cards, "dm01-034", "When you put this creature into the battle zone, draw up to 2 cards.", CardImplementationStatus.CoreKeywords);
+            cards["dm01-034"].SummonEffects = new[] { new SummonEffectDefinition(SummonEffectKind.DrawCards, 2) };
+            Configure(cards, "dm01-090", "When you put this creature into the battle zone, put the top card of your deck into your mana zone.", CardImplementationStatus.Complete);
+            cards["dm01-090"].SummonEffects = new[] { new SummonEffectDefinition(SummonEffectKind.PutTopDeckIntoMana, 1) };
+            Configure(cards, "dm01-110", "Put the top 2 cards of your deck into your mana zone.", CardImplementationStatus.Complete);
+            SetEffects(cards, "dm01-110", CardImplementationStatus.Complete,
+                new SpellEffectDefinition(SpellEffectKind.PutTopDeckIntoMana, 2));
 
             Configure(cards, "dm01-070", "Power attacker +2000.", CardImplementationStatus.Complete,
                 new KeywordAbility(CardKeyword.PowerAttacker, 2000));
