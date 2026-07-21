@@ -35,7 +35,9 @@ namespace CardGame.Core
         MustAttackIfAble,
         CannotAttack,
         CannotAttackPlayers,
-        DestroyAfterBattle
+        DestroyAfterBattle,
+        Unblockable,
+        UntapAtEndOfTurn
     }
 
     public enum CardImplementationStatus
@@ -53,7 +55,29 @@ namespace CardGame.Core
         ReturnOwnCreatureFromGraveyard,
         RandomOpponentDiscard,
         GrantTemporaryPowerAttacker,
-        GrantTemporaryDoubleBreaker
+        GrantTemporaryDoubleBreaker,
+        DrawCards,
+        PutTopDeckIntoMana,
+        TapAllOpponentCreatures
+    }
+
+    public enum SummonEffectKind
+    {
+        DrawCards,
+        PutTopDeckIntoMana
+    }
+
+    [Serializable]
+    public sealed class SummonEffectDefinition
+    {
+        public SummonEffectKind Kind;
+        public int Value;
+
+        public SummonEffectDefinition(SummonEffectKind kind, int value = 0)
+        {
+            Kind = kind;
+            Value = value;
+        }
     }
 
     [Serializable]
@@ -94,6 +118,7 @@ namespace CardGame.Core
         public string EvolutionRace = string.Empty;
         public int Power;
         public KeywordAbility[] Abilities = Array.Empty<KeywordAbility>();
+        public SummonEffectDefinition[] SummonEffects = Array.Empty<SummonEffectDefinition>();
         public SpellEffectDefinition[] SpellEffects = Array.Empty<SpellEffectDefinition>();
         public string RulesText = string.Empty;
         public string SetCode = string.Empty;
