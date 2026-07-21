@@ -44,6 +44,7 @@ namespace CardGame.Presentation
         private RenderTexture _videoTexture;
         private float _uiWidth;
         private float _uiHeight;
+        private int _matchSeed;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Bootstrap()
@@ -68,10 +69,11 @@ namespace CardGame.Presentation
                 }
             }
             _engine = new RulesEngine();
+            _matchSeed = unchecked(Environment.TickCount * 397 ^ Guid.NewGuid().GetHashCode());
             _state = _engine.StartGame(
                 StarterDeckCatalog.ShobusFireDeck.Build(StarterDeckCatalog.Cards),
                 StarterDeckCatalog.KokujosDarknessDeck.Build(StarterDeckCatalog.Cards),
-                seed: 2004,
+                seed: _matchSeed,
                 startingPlayerId: HumanId);
 
             CreateVideoPlayer();
@@ -152,7 +154,7 @@ namespace CardGame.Presentation
             GUI.Box(new Rect(0, 0, _uiWidth, 42), GUIContent.none);
             GUI.color = Color.white;
             GUI.Label(new Rect(16, 8, 500, 26),
-                $"Turn {_state.TurnNumber}  •  {(_state.ActivePlayerId == HumanId ? "Your turn" : "Computer turn")}  •  {_state.Phase}");
+                $"Turn {_state.TurnNumber}  •  {(_state.ActivePlayerId == HumanId ? "Your turn" : "Computer turn")}  •  {_state.Phase}  •  Shuffle {_matchSeed}");
             GUI.Label(new Rect(520, 8, _uiWidth - 820, 26), _message);
             _animationsEnabled = GUI.Toggle(
                 new Rect(_uiWidth - 270, 8, 250, 26), _animationsEnabled, " Play attack animations");
