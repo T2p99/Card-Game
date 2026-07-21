@@ -1,0 +1,132 @@
+card_id,media_id,card_name,cost,civilization,card_type,race,power,rarity,card_set,collector_number,card_text,image_url,video_url,implementation_status,data_source
+dm11-s1-s5,0781,Warlord Ailzonius,5,Light,Evolution Creature,Gladiator,8000,Super Rare,DM-11,S1/S5,"■ Evolution—Put on one of your Gladiators.
+■ Double breaker (This creature breaks 2 shields.)
+■ Whenever your opponent would choose a creature in the battle zone, he can't choose this one. (It can still be attacked and blocked.)",https://img.duelmasters.us/0781.webp,https://media.duelmasters.us/0781.mp4,DataOnly,https://db.duelmasters.us/search?card_set=tcg_only
+dm11-s2-s5,0782,Klujadras,7,Water,Creature,Sea Hacker,4000,Super Rare,DM-11,S2/S5,"■ Wave striker (While 2 or more other creatures in the battle zone have ""wave striker,"" this creature has its wave striker ability.)
+  When you put this creature into the battle zone, each player draws a card for each of his creatures in the battle zone that has ""wave striker.""
+",https://img.duelmasters.us/0782.webp,https://media.duelmasters.us/0782.mp4,DataOnly,https://db.duelmasters.us/search?card_set=tcg_only
+dm11-s3-s5,0783,Miraculous Plague,7,Water,Spell,,,Darkness,DM-11,S3/S5,"■ (This spell is put into your mana zone tapped.)
+■ Choose 2 of your opponent's creatures in the battle zone. Your opponent chooses one of them, puts it into his hand, and destroys the other one. Then choose 2 cards in your opponent's mana zone. Your opponent chooses one of them, puts it into his hand, and puts the other one into his graveyard.",https://img.duelmasters.us/0783.webp,https://media.duelmasters.us/0783.mp4,DataOnly,https://db.duelmasters.us/search?card_set=tcg_only
+dm11-s4-s5,0784,Miraculous Meltdown,6,Darkness,Spell,,,Fire,DM-11,S4/S5,"■ (This spell is put into your mana zone tapped.)
+■ You can cast this spell only if your opponent has more shields than you do.
+■ Your opponent chooses one of his shields for each shield you have. He puts the rest of his shields into his hand. (He can use the ""shield trigger"" abilities of those shields.)",https://img.duelmasters.us/0784.webp,https://media.duelmasters.us/0784.mp4,DataOnly,https://db.duelmasters.us/search?card_set=tcg_only
+dm11-s5-s5,0785,Miraculous Rebirth,6,Fire,Spell,,,Nature,DM-11,S5/S5,"■ (This spell is put into your mana zone tapped.)
+■ Destroy one of your opponent's creatures that has power 5000 or less. When your opponent puts that creature into his graveyard, search your deck. You may take a creature from your deck that has the same cost as that creature and put it into the battle zone. Then shuffle your deck.",https://img.duelmasters.us/0785.webp,https://media.duelmasters.us/0785.mp4,DataOnly,https://db.duelmasters.us/search?card_set=tcg_only
+dm11-1-55,0786,Evil Incarnate,6,Darkness,Evolution Creature,Devil Mask,11000,Very Rare,DM-11,1/55,"■ Evolution—Put on one of your Devil Masks.
+■ At the start of each player's turn, that player chooses one of his creatures and destroys it.
+■ Double breaker (This creature breaks 2 shields.)",https://img.duelmasters.us/0786.webp,https://media.duelmasters.us/0786.mp4,DataOnly,https://db.duelmasters.us/search?card_set=tcg_only
+dm11-2-55,0787,Heavyweight Dragon,7,Fire,Creature,Armored Dragon,9000,Very Rare,DM-11,2/55,"■ Double breaker (This creature breaks 2 shields.)
+■ Instead of having this creature attack, you may tap it to use its tap ability.
+ Choose up to 2 of your opponent's tapped creatures in the battle zone. If they have total power less than this creature's power, destroy them.",https://img.duelmasters.us/0787.webp,https://media.duelmasters.us/0787.mp4,DataOnly,https://db.duelmasters.us/search?card_set=tcg_only
+dm11-3-55,0788,"Diamondia, the Blizzard Rider",3,Nature,Evolution Creature,Snow Faerie,5000,Very Rare,DM-11,3/55,"■ Evolution—Put on one of your Snow Faeries.
+■ When you put this creature into the battle zone, return all Snow Faeries from your graveyard and your mana zone to your hand.",https://img.duelmasters.us/0788.webp,https://media.duelmasters.us/0788.mp4,DataOnly,https://db.duelmasters.us/search?card_set=tcg_only
+dm11-4-55,0789,Miraculous Snare,3,Light,Spell,,,Water,DM-11,4/55,"■ (This spell is put into your mana zone tapped.)
+■ Choose a non-evolution creature in the battle zone and add it to its owner's shields face down.",https://img.duelmasters.us/0789.webp,https://media.duelmasters.us/0789.mp4,DataOnly,https://db.duelmasters.us/search?card_set=tcg_only
+dm11-5-55,0790,Miraculous Truce,5,Light,Spell,,,Nature,DM-11,5/55,"■ Shield trigger (When this card is put into your hand from your shield zone, you may play it immediately for no cost.)
+■ (This spell is put into your mana zone tapped.)
+■ Choose a civilization. Until the start of your next turn, creatures of that civilization can't attack you even if your opponent puts them into the battle zone after you cast this spell.",https://img.duelmasters.us/0790.webp,https://media.duelmasters.us/0790.mp4,DataOnly,https://db.duelmasters.us/search?card_set=tcg_only
+dm11-6-55,0791,"Asra, Vizier of Safety",3,Light,Creature,Initiate,2000,Common,DM-11,6/55,"■ Wave striker (While 2 or more other creatures in the battle zone have ""wave striker,"" this creature has its wave striker ability.)
+  This creature gets +4000 power and has ""blocker"". (Whenever an opponent's creature attacks, you may tap this creature to stop the attack. Then the 2 creatures battle.)",https://img.duelmasters.us/0791.webp,https://media.duelmasters.us/0791.mp4,DataOnly,https://db.duelmasters.us/search?card_set=tcg_only
+dm11-7-55,0792,"Baraid, the Explorer",5,Light,Creature,Gladiator,5000,Uncommon,DM-11,7/55,"■ Silent skill (At the start of each of your turns, if this creature is tapped, you may keep it tapped and use its silent skill ability.)
+  Your light creatures can't be blocked this turn.",https://img.duelmasters.us/0792.webp,https://media.duelmasters.us/0792.mp4,DataOnly,https://db.duelmasters.us/search?card_set=tcg_only
+dm11-8-55,0793,"Belix, the Explorer",2,Light,Creature,Gladiator,3000,Rare,DM-11,8/55,"■ Blocker (Whenever an opponent's creature attacks, you may tap this creature to stop the attack. Then the 2 creatures battle.)
+■ When you put this creature into the battle zone, return a spell from your mana zone to your hand.
+■ This creature can't attack players.",https://img.duelmasters.us/0793.webp,https://media.duelmasters.us/0793.mp4,DataOnly,https://db.duelmasters.us/search?card_set=tcg_only
+dm11-9-55,0794,"Engbelt, the Spydroid",4,Light,Creature,Soltrooper,5500,Common,DM-11,9/55,"■ Blocker (Whenever an opponent's creature attacks, you may tap this creature to stop the attack. Then the 2 creatures battle.)
+■ This creature can't attack players.",https://img.duelmasters.us/0794.webp,https://media.duelmasters.us/0794.mp4,DataOnly,https://db.duelmasters.us/search?card_set=tcg_only
+dm11-10-55,0795,"Lamiel, Destiny Enforcer",5,Light,Creature,Berserker,3000,Rare,DM-11,10/55,"■ Wave striker (While 2 or more other creatures in the battle zone have ""wave striker,"" this creature has its wave striker ability.)
+  Whenever one of your creatures is destroyed during your opponent's turn, you may draw a card.
+",https://img.duelmasters.us/0795.webp,https://media.duelmasters.us/0795.mp4,DataOnly,https://db.duelmasters.us/search?card_set=tcg_only
+dm11-11-55,0796,"Merlee, the Oracle",2,Light,Creature,Light Bringer,1500,Uncommon,DM-11,11/55,"■ Wave striker (While 2 or more other creatures in the battle zone have ""wave striker,"" this creature has its wave striker ability.)
+  Each of your creatures in the battle zone gets +1000 power.
+",https://img.duelmasters.us/0796.webp,https://media.duelmasters.us/0796.mp4,DataOnly,https://db.duelmasters.us/search?card_set=tcg_only
+dm11-12-55,0797,"Nial, Vizier of Dexterity",3,Light,Creature,Initiate,2500,Common,DM-11,12/55,"■ At the end of each of your turns, you may untap this creature.",https://img.duelmasters.us/0797.webp,https://media.duelmasters.us/0797.mp4,DataOnly,https://db.duelmasters.us/search?card_set=tcg_only
+dm11-13-55,0798,Solar Trap,1,Light,Spell,,,Common,DM-11,13/55,■ Choose one of your opponent's creatures in the battle zone and tap it.,https://img.duelmasters.us/0798.webp,https://media.duelmasters.us/0798.mp4,DataOnly,https://db.duelmasters.us/search?card_set=tcg_only
+dm11-14-55,0799,"Yuliana, Channeler of Suns",3,Light,Creature,Mecha Del Sol,3000,Rare,DM-11,14/55,"■ Blocker (Whenever an opponent's creature attacks, you may tap this creature to stop the attack. Then the 2 creatures battle.)
+■ Whenever your opponent would choose a creature in the battle zone, he can't choose this one. (It can still be attacked and blocked.)
+■ This creature can't attack players.",https://img.duelmasters.us/0799.webp,https://media.duelmasters.us/0799.mp4,DataOnly,https://db.duelmasters.us/search?card_set=tcg_only
+dm11-15-55,0800,Aqua Trickster,2,Water,Creature,Liquid People,1000,Uncommon,DM-11,15/55,"■ Wave striker (While 2 or more other creatures in the battle zone have ""wave striker,"" this creature has its wave striker ability.)
+  When you put this creature into the battle zone, choose one of your opponent's creatures in the battle zone and tap it.
+",https://img.duelmasters.us/0800.webp,https://media.duelmasters.us/0800.mp4,DataOnly,https://db.duelmasters.us/search?card_set=tcg_only
+dm11-16-55,0801,Emergency Typhoon,2,Water,Spell,,,Common,DM-11,16/55,"■ Shield trigger (When this card is put into your hand from your shield zone, you may play it immediately for no cost.)
+■ Draw up to 2 cards. Then discard a card from your hand.",https://img.duelmasters.us/0801.webp,https://media.duelmasters.us/0801.mp4,DataOnly,https://db.duelmasters.us/search?card_set=tcg_only
+dm11-17-55,0802,Fantasy Fish,7,Water,Creature,Gel Fish,2000,Rare,DM-11,17/55,"■ Shield trigger (When this card is put into your hand from your shield zone, you may play it immediately for no cost.)
+■ Blocker (Whenever an opponent's creature attacks, you may tap this creature to stop the attack. Then the 2 creatures battle.)",https://img.duelmasters.us/0802.webp,https://media.duelmasters.us/0802.mp4,DataOnly,https://db.duelmasters.us/search?card_set=tcg_only
+dm11-18-55,0803,Lucky Ball,4,Water,Creature,Cyber Virus,3000,Uncommon,DM-11,18/55,"■ When you put this creature into the battle zone, if your opponent has 3 or fewer shields, draw up to 2 cards.",https://img.duelmasters.us/0803.webp,https://media.duelmasters.us/0803.mp4,DataOnly,https://db.duelmasters.us/search?card_set=tcg_only
+dm11-19-55,0804,Melodic Hunter,5,Water,Creature,Merfolk,3000,Common,DM-11,19/55,"■ Blocker (Whenever an opponent's creature attacks, you may tap this creature to stop the attack. Then the 2 creatures battle.)",https://img.duelmasters.us/0804.webp,https://media.duelmasters.us/0804.mp4,DataOnly,https://db.duelmasters.us/search?card_set=tcg_only
+dm11-20-55,0805,Revival Soldier,3,Water,Creature,Merfolk,2000,Common,DM-11,20/55,"■ Wave striker (While 2 or more other creatures in the battle zone have ""wave striker,"" this creature has its wave striker ability.)
+  This creature gets +4000 power.
+  When this creature would be destroyed, return it to your hand instead.",https://img.duelmasters.us/0805.webp,https://media.duelmasters.us/0805.mp4,DataOnly,https://db.duelmasters.us/search?card_set=tcg_only
+dm11-21-55,0806,Squawking Lunatron,5,Water,Creature,Cyber Moon,4000,Rare,DM-11,21/55,"■ Silent skill (At the start of each of your turns, if this creature is tapped, you may keep it tapped and use its silent skill ability.)
+  Return up to 3 cards from your mana zone to your hand.",https://img.duelmasters.us/0806.webp,https://media.duelmasters.us/0806.mp4,DataOnly,https://db.duelmasters.us/search?card_set=tcg_only
+dm11-22-55,0807,Time Scout,2,Water,Creature,Merfolk,1000,Common,DM-11,22/55,"■ When you put this creature into the battle zone, look at the top card of your opponent's deck.",https://img.duelmasters.us/0807.webp,https://media.duelmasters.us/0807.mp4,DataOnly,https://db.duelmasters.us/search?card_set=tcg_only
+dm11-23-55,0808,Warped Lunatron,7,Water,Creature,Cyber Moon,6000,Rare,DM-11,23/55,"■ Creatures in the battle zone don't untap at the start of each player's turn.
+■ When each player untaps his cards at the start of his turn, he may then tap any number of cards in his mana zone. For every 2 cards he taps this way, he untaps one of his creatures in the battle zone.
+■ Double breaker (This creature breaks 2 shields.)",https://img.duelmasters.us/0808.webp,https://media.duelmasters.us/0808.mp4,DataOnly,https://db.duelmasters.us/search?card_set=tcg_only
+dm11-24-55,0809,"Baira, the Hidden Lunatic",3,Darkness,Creature,Pandora's Box,5000,Common,DM-11,24/55,"■ Blocker (Whenever an opponent's creature attacks, you may tap this creature to stop the attack. Then the 2 creatures battle.)
+■ This creature can't attack.
+■ When this creature battles, destroy it after the battle.",https://img.duelmasters.us/0809.webp,https://media.duelmasters.us/0809.mp4,DataOnly,https://db.duelmasters.us/search?card_set=tcg_only
+dm11-25-55,0810,"Beratcha, the Hidden Glutton",5,Darkness,Creature,Pandora's Box,3000,Common,DM-11,25/55,"■ Slayer (Whenever this creature battles, destroy the other creature after the battle.)",https://img.duelmasters.us/0810.webp,https://media.duelmasters.us/0810.mp4,DataOnly,https://db.duelmasters.us/search?card_set=tcg_only
+dm11-26-55,0811,"Gazer Eyes, Shadow of Secrets",4,Darkness,Creature,Ghost,3000,Rare,DM-11,26/55,"■ Silent skill (At the start of each of your turns, if this creature is tapped, you may keep it tapped and use its silent skill ability.)
+  Look at your opponent's hand and choose a card from it. Your opponent discards that card.",https://img.duelmasters.us/0811.webp,https://media.duelmasters.us/0811.mp4,DataOnly,https://db.duelmasters.us/search?card_set=tcg_only
+dm11-27-55,0812,"Hazaria, Duke of Thorns",4,Darkness,Creature,Dark Lord,2000,Rare,DM-11,27/55,"■ Wave striker (While 2 or more other creatures in the battle zone have ""wave striker,"" this creature has its wave striker ability.)
+  When you put this creature into the battle zone, your opponent chooses one of his creatures and destroys it.
+",https://img.duelmasters.us/0812.webp,https://media.duelmasters.us/0812.mp4,DataOnly,https://db.duelmasters.us/search?card_set=tcg_only
+dm11-28-55,0813,"Jagila, the Hidden Pillager",5,Darkness,Creature,Pandora's Box,3000,Uncommon,DM-11,28/55,"■ Wave striker (While 2 or more other creatures in the battle zone have ""wave striker,"" this creature has its wave striker ability.)
+  When you put this creature into the battle zone, your opponent discards 3 cards at random from his hand.
+",https://img.duelmasters.us/0813.webp,https://media.duelmasters.us/0813.mp4,DataOnly,https://db.duelmasters.us/search?card_set=tcg_only
+dm11-29-55,0814,Morbid Medicine,4,Darkness,Spell,,,Uncommon,DM-11,29/55,■ Return up to 2 creatures from your graveyard to your hand.,https://img.duelmasters.us/0814.webp,https://media.duelmasters.us/0814.mp4,DataOnly,https://db.duelmasters.us/search?card_set=tcg_only
+dm11-30-55,0815,Roulette of Ruin,5,Darkness,Spell,,,Rare,DM-11,30/55,"■ Shield trigger (When this card is put into your hand from your shield zone, you may play it immediately for no cost.)
+■ Choose a number. Show your hand to your opponent and discard from it each card that has that cost. Then your opponent shows you his hand and discards from it each card that has that cost.",https://img.duelmasters.us/0815.webp,https://media.duelmasters.us/0815.mp4,DataOnly,https://db.duelmasters.us/search?card_set=tcg_only
+dm11-31-55,0816,Saliva Worm,3,Darkness,Creature,Parasite Worm,2000,Common,DM-11,31/55,"■ Wave striker (While 2 or more other creatures in the battle zone have ""wave striker,"" this creature has its wave striker ability.)
+  This creature gets +4000 power and has ""Darkness stealth (This creature can't be blocked while your opponent has any darkness cards in his mana zone).""
+",https://img.duelmasters.us/0816.webp,https://media.duelmasters.us/0816.mp4,DataOnly,https://db.duelmasters.us/search?card_set=tcg_only
+dm11-32-55,0817,"Spinning Terror, the Wretched",2,Darkness,Creature,Devil Mask,1000,Common,DM-11,32/55,■ This creature gets +2000 power for each tapped creature your opponent has in the battle zone.,https://img.duelmasters.us/0817.webp,https://media.duelmasters.us/0817.mp4,DataOnly,https://db.duelmasters.us/search?card_set=tcg_only
+dm11-33-55,0818,Bonfire Lizard,6,Fire,Creature,Melt Warrior,4000,Uncommon,DM-11,33/55,"■ Wave striker (While 2 or more other creatures in the battle zone have ""wave striker,"" this creature has its wave striker ability.)
+  When you put this creature into the battle zone, destroy up to 2 of your opponent's creatures that have ""blocker.""
+",https://img.duelmasters.us/0818.webp,https://media.duelmasters.us/0818.mp4,DataOnly,https://db.duelmasters.us/search?card_set=tcg_only
+dm11-34-55,0819,Brad's Cutter,2,Fire,Creature,Xenoparts,1000,Common,DM-11,34/55,"■ Shield trigger (When this card is put into your hand from your shield zone, you may play it immediately for no cost.)",https://img.duelmasters.us/0819.webp,https://media.duelmasters.us/0819.mp4,DataOnly,https://db.duelmasters.us/search?card_set=tcg_only
+dm11-35-55,0820,Eviscerating Warrior Lumez,3,Fire,Creature,Armorloid,2000,Rare,DM-11,35/55,"■ Wave striker (While 2 or more other creatures in the battle zone have ""wave striker,"" this creature has its wave striker ability.)
+  When you put this creature into the battle zone, destroy all creatures that have power 2000 or less.
+",https://img.duelmasters.us/0820.webp,https://media.duelmasters.us/0820.mp4,DataOnly,https://db.duelmasters.us/search?card_set=tcg_only
+dm11-36-55,0821,"Gankloak, Rogue Commando",3,Fire,Creature,Human,2000,Common,DM-11,36/55,"■ Silent skill (At the start of each of your turns, if this creature is tapped, you may keep it tapped and use its silent skill ability.)
+  Each of your fire creatures in the battle zone gets ""double breaker"" until the end of the turn. (It breaks 2 shields.)",https://img.duelmasters.us/0821.webp,https://media.duelmasters.us/0821.mp4,DataOnly,https://db.duelmasters.us/search?card_set=tcg_only
+dm11-37-55,0822,Hysteria Lizard,4,Fire,Creature,Melt Warrior,3000,Uncommon,DM-11,37/55,"■ This creature attacks each turn if able.
+■ Power attacker +3000 (While attacking, this creature gets +3000 power.)",https://img.duelmasters.us/0822.webp,https://media.duelmasters.us/0822.mp4,DataOnly,https://db.duelmasters.us/search?card_set=tcg_only
+dm11-38-55,0823,Jabaha's Automaton,5,Fire,Evolution Creature,Xenoparts,6000,Rare,DM-11,38/55,"■ Evolution—Put on one of your XenoParts.
+■ Power attacker +4000 (While attacking, this creature gets +4000 power.)
+■ Double breaker (This creature breaks 2 shields.)",https://img.duelmasters.us/0823.webp,https://media.duelmasters.us/0823.mp4,DataOnly,https://db.duelmasters.us/search?card_set=tcg_only
+dm11-39-55,0824,Lockdown Lizard,4,Fire,Creature,Melt Warrior,3000,Rare,DM-11,39/55,■ Players can't use the  abilities of their creatures.,https://img.duelmasters.us/0824.webp,https://media.duelmasters.us/0824.mp4,DataOnly,https://db.duelmasters.us/search?card_set=tcg_only
+dm11-40-55,0825,"Sapian Tark, Flame Dervish",3,Fire,Creature,Dragonoid,2000,Common,DM-11,40/55,"■ Wave striker (While 2 or more other creatures in the battle zone have ""wave striker,"" this creature has its wave striker ability.)
+  This creature gets +4000 power and can attack untapped creatures.
+",https://img.duelmasters.us/0825.webp,https://media.duelmasters.us/0825.mp4,DataOnly,https://db.duelmasters.us/search?card_set=tcg_only
+dm11-41-55,0826,Ten-Ton Crunch,4,Fire,Spell,,,Common,DM-11,41/55,"■ Shield trigger (When this card is put into your hand from your shield zone, you may play it immediately for no cost.)
+■ Destroy one of your opponent's creatures that has power 3000 or less.",https://img.duelmasters.us/0826.webp,https://media.duelmasters.us/0826.mp4,DataOnly,https://db.duelmasters.us/search?card_set=tcg_only
+dm11-42-55,0827,Hazard Hopper,4,Nature,Creature,Giant Insect,5000,Uncommon,DM-11,42/55,"■ At the end of each of your turns, if this creature broke any shields that turn, return it to your hand.",https://img.duelmasters.us/0827.webp,https://media.duelmasters.us/0827.mp4,DataOnly,https://db.duelmasters.us/search?card_set=tcg_only
+dm11-43-55,0828,Hearty Cap'n Polligon,1,Nature,Creature,Snow Faerie,2000,Common,DM-11,43/55,"■ At the end of each of your turns, if this creature broke any shields that turn, return it to your hand.",https://img.duelmasters.us/0828.webp,https://media.duelmasters.us/0828.mp4,DataOnly,https://db.duelmasters.us/search?card_set=tcg_only
+dm11-44-55,0829,Macho Melon,2,Nature,Creature,Wild Veggies,1000,Uncommon,DM-11,44/55,"■ Wave striker (While 2 or more other creatures in the battle zone have ""wave striker,"" this creature has its wave striker ability.)
+  Power attacker +3000 (While attacking, this creature gets +3000 power.)
+",https://img.duelmasters.us/0829.webp,https://media.duelmasters.us/0829.mp4,DataOnly,https://db.duelmasters.us/search?card_set=tcg_only
+dm11-45-55,0830,Ninja Pumpkin,3,Nature,Creature,Wild Veggies,2000,Common,DM-11,45/55,"■ Wave striker (While 2 or more other creatures in the battle zone have ""wave striker,"" this creature has its wave striker ability.)
+  This creature gets +4000 power and can't be blocked by any creature that has power 5000 or less.
+",https://img.duelmasters.us/0830.webp,https://media.duelmasters.us/0830.mp4,DataOnly,https://db.duelmasters.us/search?card_set=tcg_only
+dm11-46-55,0831,Quillspike Rumbler,4,Nature,Creature,Beast Folk,3000,Common,DM-11,46/55,"■ Whenever this creature attacks a creature, this creature gets +3000 power until the end of the turn.",https://img.duelmasters.us/0831.webp,https://media.duelmasters.us/0831.mp4,DataOnly,https://db.duelmasters.us/search?card_set=tcg_only
+dm11-47-55,0832,Rainbow Gate,2,Nature,Spell,,,Common,DM-11,47/55,"■ Search your deck. You may take a multicolored creature from your deck, show that creature to your opponent, and put it into your hand. Then shuffle your deck.",https://img.duelmasters.us/0832.webp,https://media.duelmasters.us/0832.mp4,DataOnly,https://db.duelmasters.us/search?card_set=tcg_only
+dm11-48-55,0833,Rollicking Totem,5,Nature,Creature,Mystery Totem,4000,Rare,DM-11,48/55,"■ Silent skill (At the start of each of your turns, if this creature is tapped, you may keep it tapped and use its silent skill ability.)
+  Put a creature that has Dragon in its race from your mana zone into the battle zone.",https://img.duelmasters.us/0833.webp,https://media.duelmasters.us/0833.mp4,DataOnly,https://db.duelmasters.us/search?card_set=tcg_only
+dm11-49-55,0834,Royal Durian,5,Nature,Creature,Wild Veggies,1000,Rare,DM-11,49/55,"■ Shield trigger (When this card is put into your hand from your shield zone, you may play it immediately for no cost.)
+■ When you put this creature into the battle zone, put the top card of each evolution creature from the battle zone into its owner's mana zone.",https://img.duelmasters.us/0834.webp,https://media.duelmasters.us/0834.mp4,DataOnly,https://db.duelmasters.us/search?card_set=tcg_only
+dm11-50-55,0835,Skyscraper Shell,4,Nature,Creature,Colony Beetle,2000,Rare,DM-11,50/55,"■ Wave striker (While 2 or more other creatures in the battle zone have ""wave striker,"" this creature has its wave striker ability.)
+  When you put this creature into the battle zone, your opponent chooses one of his creatures in the battle zone and puts it into his mana zone.
+",https://img.duelmasters.us/0835.webp,https://media.duelmasters.us/0835.mp4,DataOnly,https://db.duelmasters.us/search?card_set=tcg_only
+dm11-51-55,0836,Rise and Shine,4,Light,Spell,,,Water,DM-11,51/55,"■ Shield trigger (When this card is put into your hand from your shield zone, you may play it immediately for no cost.)
+■ (This spell is put into your mana zone tapped.)
+■ Reveal the top 4 cards of your deck. Put one of them that has ""blocker"" into your hand, and put the rest on the bottom of your deck in any order.",https://img.duelmasters.us/0836.webp,https://media.duelmasters.us/0836.mp4,DataOnly,https://db.duelmasters.us/search?card_set=tcg_only
+dm11-52-55,0837,Live and Breathe,3,Light,Spell,,,Nature,DM-11,52/55,"■ (This spell is put into your mana zone tapped.)
+■ Whenever you summon a creature this turn, search your deck. You may take a creature from your deck that has the same name as that creature and put it into the battle zone. Then shuffle your deck.",https://img.duelmasters.us/0837.webp,https://media.duelmasters.us/0837.mp4,DataOnly,https://db.duelmasters.us/search?card_set=tcg_only
+dm11-53-55,0838,Hide and Seek,4,Water,Spell,,,Darkness,DM-11,53/55,"■ (This spell is put into your mana zone tapped.)
+■ Choose one of your opponent's non-evolution creatures in the battle zone and return it to his hand. Then he discards a card at random from his hand.",https://img.duelmasters.us/0838.webp,https://media.duelmasters.us/0838.mp4,DataOnly,https://db.duelmasters.us/search?card_set=tcg_only
+dm11-54-55,0839,Slash and Burn,4,Darkness,Spell,,,Fire,DM-11,54/55,"■ (This spell is put into your mana zone tapped.)
+■ Whenever any of your opponent's creatures is destroyed this turn, your opponent chooses a card in his mana zone and puts it into his graveyard. Then he chooses one of his shields and puts it into his graveyard.",https://img.duelmasters.us/0839.webp,https://media.duelmasters.us/0839.mp4,DataOnly,https://db.duelmasters.us/search?card_set=tcg_only
+dm11-55-55,0840,Reap and Sow,5,Fire,Spell,,,Nature,DM-11,55/55,"■ (This spell is put into your mana zone tapped.)
+■ Choose a card in your opponent's mana zone and put it into his graveyard. Then put the top card of your deck into your mana zone.",https://img.duelmasters.us/0840.webp,https://media.duelmasters.us/0840.mp4,DataOnly,https://db.duelmasters.us/search?card_set=tcg_only
