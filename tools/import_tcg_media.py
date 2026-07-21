@@ -13,6 +13,7 @@ import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from typing import NamedTuple
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -20,6 +21,11 @@ MANIFEST_DIR = ROOT / "Assets/Resources/CardGame/Data/Tcg"
 ART_DIR = ROOT / "Assets/Resources/CardGame/CardArt"
 VIDEO_DIR = ROOT / "Assets/Resources/CardGame/Videos"
 USER_AGENT = "Card-Game licensed media importer/1.0"
+
+
+class ImportResult(NamedTuple):
+    status: str
+    message: str
 
 
 def request(url: str, method: str = "GET", timeout: int = 30):
@@ -61,33 +67,33 @@ def convert_webp(source: Path, destination: Path) -> None:
     raise RuntimeError("WebP conversion needs Pillow, ImageMagick, or ffmpeg. Try: python -m pip install pillow")
 
 
-def import_image(card: dict[str, str]) -> str:
+def import_image(card: dict[str, str]) -> ImportResult:
     media_id = int(card["media_id"])
     destination = ART_DIR / f"{media_id:04d}.png"
     if destination.exists() and destination.stat().st_size > 0:
-        return f"scan {media_id:04d} already present"
+        return ImportResult("present", f"scan {media_id:04d} already present")
     with tempfile.TemporaryDirectory() as directory:
         webp = Path(directory) / f"{media_id:04d}.webp"
         download(card["image_url"], webp)
         destination.parent.mkdir(parents=True, exist_ok=True)
         convert_webp(webp, destination)
-    return f"scan {media_id:04d} imported"
+    return ImportResult("imported", f"scan {media_id:04d} imported")
 
 
-def import_video(card: dict[str, str]) -> str:
+def import_video(card: dict[str, str]) -> ImportResult:
     media_id = int(card["media_id"])
     destination = VIDEO_DIR / f"{media_id:04d}.mp4"
     if destination.exists() and destination.stat().st_size > 0:
-        return f"video {media_id:04d} already present"
+        return ImportResult("present", f"video {media_id:04d} already present")
     try:
         with request(card["video_url"], method="HEAD", timeout=15) as response:
             if response.status != 200:
-                return f"video {media_id:04d} unavailable"
+                return ImportResult("not_provided", f"video {media_id:04d} not provided by database (skipped)")
         download(card["video_url"], destination)
-        return f"video {media_id:04d} imported"
+        return ImportResult("imported", f"video {media_id:04d} imported")
     except urllib.error.HTTPError as error:
         if error.code == 404:
-            return f"video {media_id:04d} unavailable"
+            return ImportResult("not_provided", f"video {media_id:04d} not provided by database (skipped)")
         raise
 
 
@@ -117,15 +123,23 @@ def main() -> int:
             jobs.extend(pool.submit(import_image, card) for card in cards)
         if args.videos or args.all:
             jobs.extend(pool.submit(import_video, card) for card in cards)
+        counts = {"imported": 0, "present": 0, "not_provided": 0}
         failures = 0
         for future in as_completed(jobs):
             try:
-                print(future.result())
+                result = future.result()
+                counts[result.status] += 1
+                print(result.message)
             except Exception as error:
                 failures += 1
                 print(f"ERROR: {error}", file=sys.stderr)
 
-    print(f"Finished with {failures} failed operation(s). The importer is resumable; rerun the same command after fixing connectivity.")
+    print(
+        "Summary: "
+        f"{counts['imported']} imported, {counts['present']} already present, "
+        f"{counts['not_provided']} optional videos not provided, {failures} failed."
+    )
+    print("The importer is resumable; rerun the same command after fixing any genuine connectivity failures.")
     if args.videos or args.all:
         print("MP4 files belong in Git LFS before committing: git lfs track '*.mp4'")
     return 1 if failures else 0
