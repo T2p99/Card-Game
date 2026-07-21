@@ -35,9 +35,22 @@ namespace CardGame.Core
         MustAttackIfAble,
         CannotAttack,
         CannotAttackPlayers,
+        CannotAttackCreatures,
+        CannotBeAttacked,
         DestroyAfterBattle,
         Unblockable,
-        UntapAtEndOfTurn
+        UntapAtEndOfTurn,
+        Charger,
+        Stealth,
+        Survivor,
+        WaveStriker,
+        SilentSkill,
+        TurboRush,
+        TapAbility,
+        CrewBreaker,
+        BlockIfAble,
+        AttackableWhileUntapped,
+        UnblockableByPowerAtMost
     }
 
     public enum CardImplementationStatus
@@ -107,6 +120,13 @@ namespace CardGame.Core
     }
 
     [Serializable]
+    public sealed class EvolutionBaseRequirement
+    {
+        public string[] Races = Array.Empty<string>();
+        public string RaceContains = string.Empty;
+    }
+
+    [Serializable]
     public sealed class CardDefinition
     {
         public string Id = string.Empty;
@@ -116,8 +136,13 @@ namespace CardGame.Core
         public CardType Type;
         public string[] Races = Array.Empty<string>();
         public string EvolutionRace = string.Empty;
+        public string[] EvolutionRaces = Array.Empty<string>();
+        public EvolutionBaseRequirement[] EvolutionRequirements = Array.Empty<EvolutionBaseRequirement>();
+        public bool IsVortexEvolution;
         public int Power;
         public KeywordAbility[] Abilities = Array.Empty<KeywordAbility>();
+        public RuleAbilityDefinition[] RuleAbilities = Array.Empty<RuleAbilityDefinition>();
+        public string[] RuleLineIds = Array.Empty<string>();
         public SummonEffectDefinition[] SummonEffects = Array.Empty<SummonEffectDefinition>();
         public SpellEffectDefinition[] SpellEffects = Array.Empty<SpellEffectDefinition>();
         public string RulesText = string.Empty;

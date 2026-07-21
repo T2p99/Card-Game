@@ -24,8 +24,16 @@ namespace CardGame.Core
         public bool Tapped;
         public int EnteredBattleZoneOnTurn = -1;
         public int TemporaryPowerAttacker;
+        public int TemporaryPower;
         public bool TemporaryDoubleBreaker;
+        public int TemporaryBreakerCount;
+        public List<CardKeyword> TemporaryKeywords = new List<CardKeyword>();
+        public bool AttackedThisTurn;
+        public bool BrokeShieldThisTurn;
         public List<CardInstance> EvolutionMaterials = new List<CardInstance>();
+
+        public bool HasKeyword(CardKeyword keyword) =>
+            Definition.HasKeyword(keyword) || TemporaryKeywords.Contains(keyword);
     }
 
     [Serializable]
@@ -64,6 +72,11 @@ namespace CardGame.Core
         public List<CardInstance> PendingShieldTriggers = new List<CardInstance>();
         public int RandomSeed;
         public int RandomActionIndex;
+        public bool[] SpellCastThisTurn = new bool[2];
+        public bool[] CreatureSummonedThisTurn = new bool[2];
+        public int[] ShieldsBrokenThisTurn = new int[2];
+        public bool[] BlockedCreatureGetsSlayerThisTurn = new bool[2];
+        public int ExtraTurnsQueuedForPlayer = -1;
 
         public PlayerState ActivePlayer => Players[ActivePlayerId];
         public PlayerState Opponent => Players[1 - ActivePlayerId];
