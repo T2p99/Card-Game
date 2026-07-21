@@ -225,6 +225,10 @@ namespace CardGame.Core
             if (blocker.Tapped) return RuleResult.Fail("A tapped creature cannot block.");
             if (!blocker.Definition.HasKeyword(CardKeyword.Blocker))
                 return RuleResult.Fail("The selected creature does not have Blocker.");
+            var attackingPlayer = state.Players[1 - defendingPlayerId];
+            var attacker = Find(attackingPlayer.BattleZone, attack.AttackerInstanceId);
+            if (attacker != null && attacker.Definition.HasKeyword(CardKeyword.Unblockable))
+                return RuleResult.Fail("This attacker cannot be blocked.");
 
             blocker.Tapped = true;
             ResolveCreatureBattle(state, attack.AttackerInstanceId, blocker.InstanceId);
@@ -281,6 +285,8 @@ namespace CardGame.Core
             {
                 creature.TemporaryPowerAttacker = 0;
                 creature.TemporaryDoubleBreaker = false;
+                if (creature.Definition.HasKeyword(CardKeyword.UntapAtEndOfTurn))
+                    creature.Tapped = false;
             }
 
             state.ActivePlayerId = 1 - state.ActivePlayerId;
@@ -444,6 +450,10 @@ namespace CardGame.Core
                         target = Find(state.Players[playerId].BattleZone, targetInstanceId);
                         if (target == null) return RuleResult.Fail("Choose one of your creatures.");
                         break;
+                    case SpellEffectKind.DrawCards:
+                    case SpellEffectKind.PutTopDeckIntoMana:
+                    case SpellEffectKind.TapAllOpponentCreatures:
+                        break;
                 }
             }
 
@@ -494,6 +504,15 @@ namespace CardGame.Core
                         target = Find(player.BattleZone, targetInstanceId);
                         if (target != null) target.TemporaryDoubleBreaker = true;
                         break;
+                    case SpellEffectKind.DrawCards:
+                        DrawCards(state, player, opponent, effect.Value);
+                        break;
+                    case SpellEffectKind.PutTopDeckIntoMana:
+                        PutTopDeckIntoMana(player, effect.Value);
+                        break;
+                    case SpellEffectKind.TapAllOpponentCreatures:
+                        foreach (var creature in opponent.BattleZone) creature.Tapped = true;
+                        break;
                 }
             }
         }
@@ -502,6 +521,18 @@ namespace CardGame.Core
         {
             var player = state.Players[playerId];
             var opponent = state.Players[1 - playerId];
+            foreach (var effect in creature.Definition.SummonEffects)
+            {
+                switch (effect.Kind)
+                {
+                    case SummonEffectKind.DrawCards:
+                        DrawCards(state, player, opponent, effect.Value);
+                        break;
+                    case SummonEffectKind.PutTopDeckIntoMana:
+                        PutTopDeckIntoMana(player, effect.Value);
+                        break;
+                }
+            }
             CardInstance target;
             switch (creature.Definition.Id)
             {
@@ -539,6 +570,29 @@ namespace CardGame.Core
                     target = opponent.BattleZone.OrderByDescending(card => card.Definition.Power).FirstOrDefault();
                     if (target != null) Destroy(opponent, target);
                     break;
+            }
+        }
+
+        private static void DrawCards(GameState state, PlayerState player, PlayerState opponent, int count)
+        {
+            for (var i = 0; i < count; i++)
+            {
+                if (player.Deck.Count == 0)
+                {
+                    Finish(state, opponent.PlayerId, "Deck out");
+                    return;
+                }
+                player.Hand.Add(DrawTop(player.Deck));
+            }
+        }
+
+        private static void PutTopDeckIntoMana(PlayerState player, int count)
+        {
+            for (var i = 0; i < count && player.Deck.Count > 0; i++)
+            {
+                var card = DrawTop(player.Deck);
+                card.Tapped = false;
+                player.Mana.Add(card);
             }
         }
 
