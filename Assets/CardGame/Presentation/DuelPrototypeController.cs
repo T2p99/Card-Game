@@ -975,16 +975,18 @@ namespace CardGame.Presentation
 
         private IEnumerator PlayAttackVideo(CardInstance attacker)
         {
-            if (!_animationsEnabled || !attacker.Definition.HasDatabaseVideo) yield break;
-            _showVideo = true;
+            if (!_animationsEnabled) yield break;
             var localVideo = Resources.Load<VideoClip>($"CardGame/Videos/{attacker.Definition.DatabaseMediaId:0000}");
             if (localVideo != null)
             {
+                _showVideo = true;
                 _videoPlayer.source = VideoSource.VideoClip;
                 _videoPlayer.clip = localVideo;
             }
             else
             {
+                if (!attacker.Definition.HasDatabaseVideo) yield break;
+                _showVideo = true;
                 _videoPlayer.source = VideoSource.Url;
                 _videoPlayer.url = attacker.Definition.DatabaseVideoUrl;
             }
