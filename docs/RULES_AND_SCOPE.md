@@ -62,8 +62,20 @@ It does not yet include:
 - every card-specific effect;
 - full multi-civilization, evolution, cross-gear, and set-specific mechanics;
 - online multiplayer, matchmaking, accounts, collections, or monetization;
-- copyrighted card artwork, audio, video, logos, or fonts in the repository;
 - production-quality attack cinematics.
+
+## Set-by-set implementation plan
+
+Phase 1 is the original English TCG pool selected by the database's `tcg_only` filter: 916 printings across DM-01 through DM-12 plus 16 promotional printings. `Assets/Resources/CardGame/Data/Tcg/` contains one metadata and media manifest per set for this phase.
+
+Rules are implemented and verified in this order:
+
+1. DM-01 Base Set.
+2. DM-02 through DM-12, one set at a time.
+3. English-era promotional cards after their referenced mechanics exist.
+4. The fan-translated DM-13 onward card pool only after the original TCG phase passes its catalog and gameplay tests.
+
+Media availability and rule readiness are intentionally separate. A scan or animation can be imported while the card remains `DataOnly`; a card becomes `Complete` only after every printed behavior has engine coverage and tests.
 
 ## Architecture rule
 
