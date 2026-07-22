@@ -18,6 +18,14 @@ namespace CardGame.Presentation
             "DM-01", "DM-02", "DM-03", "DM-04", "DM-05", "DM-06",
             "DM-07", "DM-08", "DM-09", "DM-10", "DM-11", "DM-12", "PROMO"
         };
+        private static readonly Civilization[] SelectableCivilizations =
+        {
+            Civilization.Light,
+            Civilization.Water,
+            Civilization.Darkness,
+            Civilization.Fire,
+            Civilization.Nature
+        };
 
         private readonly Dictionary<string, Texture2D> _cardArt = new Dictionary<string, Texture2D>();
         private readonly HashSet<string> _artRequests = new HashSet<string>();
@@ -26,6 +34,10 @@ namespace CardGame.Presentation
             new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "DM-01" };
         private readonly HashSet<string> _computerSelectedSets =
             new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "DM-01" };
+        private readonly HashSet<Civilization> _humanSelectedCivilizations =
+            new HashSet<Civilization>(SelectableCivilizations);
+        private readonly HashSet<Civilization> _computerSelectedCivilizations =
+            new HashSet<Civilization>(SelectableCivilizations);
         private long _selectedEvolutionBaseId;
         private Texture2D _cardBack;
 
@@ -40,6 +52,8 @@ namespace CardGame.Presentation
         private Vector2 _handScroll;
         private Vector2 _humanBattleScroll;
         private Vector2 _computerBattleScroll;
+        private Vector2 _humanManaScroll;
+        private Vector2 _computerManaScroll;
         private Vector2 _manaSelectionScroll;
         private Vector2 _battleActionScroll;
         private string _message = "Choose a card, charge mana, and summon a creature.";
@@ -56,9 +70,11 @@ namespace CardGame.Presentation
         private float _uiWidth;
         private float _uiHeight;
         private int _matchSeed;
-        private string _setupMessage = "Choose one or more sets for each deck pool.";
+        private string _setupMessage = "Choose one or more sets and civilizations for each deck pool.";
         private string _humanDeckLabel = "DM-01";
         private string _computerDeckLabel = "DM-01";
+        private string _humanCivilizationLabel = "All civilizations";
+        private string _computerCivilizationLabel = "All civilizations";
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Bootstrap()
@@ -130,17 +146,27 @@ namespace CardGame.Presentation
         {
             const float referenceWidth = 1600f;
             const float referenceHeight = 900f;
-            var uiScale = Mathf.Max(0.5f, Mathf.Min(Screen.width / referenceWidth, Screen.height / referenceHeight));
-            _uiWidth = Screen.width / uiScale;
-            _uiHeight = Screen.height / uiScale;
             var previousMatrix = GUI.matrix;
-            GUI.matrix = Matrix4x4.Scale(new Vector3(uiScale, uiScale, 1f));
+            GUI.matrix = Matrix4x4.identity;
+            GUI.backgroundColor = new Color(0.035f, 0.045f, 0.065f);
+            GUI.Box(new Rect(0f, 0f, Screen.width, Screen.height), GUIContent.none);
+
+            var uiScale = Mathf.Max(0.1f,
+                Mathf.Min(Screen.width / referenceWidth, Screen.height / referenceHeight));
+            var offsetX = (Screen.width - referenceWidth * uiScale) * 0.5f;
+            var offsetY = (Screen.height - referenceHeight * uiScale) * 0.5f;
+            GUI.matrix = Matrix4x4.TRS(
+                new Vector3(offsetX, offsetY, 0f),
+                Quaternion.identity,
+                new Vector3(uiScale, uiScale, 1f));
+            _uiWidth = referenceWidth;
+            _uiHeight = referenceHeight;
 
             GUI.skin.label.fontSize = 15;
             GUI.skin.button.fontSize = 15;
             GUI.skin.toggle.fontSize = 14;
 
-            GUI.backgroundColor = new Color(0.10f, 0.13f, 0.17f);
+            GUI.backgroundColor = new Color(0.075f, 0.095f, 0.125f);
             GUI.Box(new Rect(0, 0, _uiWidth, _uiHeight), GUIContent.none);
             if (_showDeckSetup || _state == null)
             {
@@ -182,22 +208,24 @@ namespace CardGame.Presentation
             };
             GUI.color = Color.white;
             GUI.Label(new Rect(panel.x + 30f, panel.y + 20f, panel.width - 60f, 48f),
-                "CHOOSE CARD-SET POOLS", titleStyle);
+                "CHOOSE DECK POOLS", titleStyle);
             GUI.Label(new Rect(panel.x + 70f, panel.y + 68f, panel.width - 140f, 50f),
-                "Each side receives an independently generated legal 40-card deck, then the engine shuffles it before dealing shields and hands. Maximum four copies per card name.",
+                "Choose card sets and civilizations independently for each side. Multicolored cards are included only when all of their civilizations are selected. Each legal 40-card deck is freshly built and shuffled.",
                 subtitleStyle);
 
             var gap = 30f;
             var selectorWidth = (panel.width - 90f - gap) * 0.5f;
             var selectorHeight = panel.height - 260f;
             DrawSetPoolSelector(new Rect(panel.x + 45f, panel.y + 126f, selectorWidth, selectorHeight),
-                "YOUR DECK POOL", _humanSelectedSets);
+                "YOUR DECK POOL", _humanSelectedSets, _humanSelectedCivilizations);
             DrawSetPoolSelector(new Rect(panel.x + 45f + selectorWidth + gap, panel.y + 126f,
                     selectorWidth, selectorHeight),
-                "COMPUTER DECK POOL", _computerSelectedSets);
+                "COMPUTER DECK POOL", _computerSelectedSets, _computerSelectedCivilizations);
 
-            var humanReady = CanBuildDeckFromSets(_humanSelectedSets);
-            var computerReady = CanBuildDeckFromSets(_computerSelectedSets);
+            var humanCardNames = CountPlayableCardNames(_humanSelectedSets, _humanSelectedCivilizations);
+            var computerCardNames = CountPlayableCardNames(_computerSelectedSets, _computerSelectedCivilizations);
+            var humanReady = humanCardNames >= 10;
+            var computerReady = computerCardNames >= 10;
             var messageStyle = new GUIStyle(subtitleStyle)
             {
                 alignment = TextAnchor.MiddleLeft
@@ -205,8 +233,11 @@ namespace CardGame.Presentation
             messageStyle.normal.textColor = humanReady && computerReady
                 ? new Color(0.70f, 0.90f, 0.72f)
                 : new Color(1f, 0.70f, 0.30f);
+            var readinessMessage = humanReady && computerReady
+                ? _setupMessage
+                : $"A legal deck needs at least 10 different card names. Your pool has {humanCardNames}; the computer pool has {computerCardNames}.";
             GUI.Label(new Rect(panel.x + 48f, panel.yMax - 116f, panel.width - 430f, 64f),
-                _setupMessage, messageStyle);
+                readinessMessage, messageStyle);
 
             GUI.enabled = humanReady && computerReady;
             if (GUI.Button(new Rect(panel.xMax - 350f, panel.yMax - 108f, 300f, 62f), "BUILD DECKS & START DUEL"))
@@ -214,7 +245,11 @@ namespace CardGame.Presentation
             GUI.enabled = true;
         }
 
-        private static void DrawSetPoolSelector(Rect area, string title, HashSet<string> selectedSets)
+        private static void DrawSetPoolSelector(
+            Rect area,
+            string title,
+            HashSet<string> selectedSets,
+            HashSet<Civilization> selectedCivilizations)
         {
             GUI.backgroundColor = new Color(0.10f, 0.13f, 0.17f);
             GUI.Box(area, GUIContent.none);
@@ -248,35 +283,77 @@ namespace CardGame.Presentation
                 }
             }
 
+            var civilizationY = area.y + 300f;
+            var sectionStyle = new GUIStyle(GUI.skin.label)
+            {
+                alignment = TextAnchor.MiddleLeft,
+                fontSize = 14,
+                fontStyle = FontStyle.Bold
+            };
+            GUI.Label(new Rect(area.x + 14f, civilizationY, area.width - 28f, 22f),
+                "CIVILIZATIONS", sectionStyle);
+            var civilizationCellWidth = (area.width - 28f) / SelectableCivilizations.Length;
+            for (var i = 0; i < SelectableCivilizations.Length; i++)
+            {
+                var civilization = SelectableCivilizations[i];
+                var wasSelected = selectedCivilizations.Contains(civilization);
+                GUI.backgroundColor = CivilizationColor(civilization);
+                var isSelected = GUI.Toggle(
+                    new Rect(area.x + 14f + i * civilizationCellWidth, civilizationY + 24f,
+                        civilizationCellWidth - 5f, 36f),
+                    wasSelected, $" {civilization}");
+                if (isSelected != wasSelected)
+                {
+                    if (isSelected) selectedCivilizations.Add(civilization);
+                    else selectedCivilizations.Remove(civilization);
+                }
+            }
+
             var selectedCards = TcgCatalog.Printings.Count(card =>
-                selectedSets.Contains(card.SetCode) &&
-                card.ImplementationStatus == CardImplementationStatus.Complete);
+                CardMatchesDeckPool(card, selectedSets, selectedCivilizations));
             var uniqueNames = TcgCatalog.Printings.Where(card =>
-                    selectedSets.Contains(card.SetCode) &&
-                    card.ImplementationStatus == CardImplementationStatus.Complete)
+                    CardMatchesDeckPool(card, selectedSets, selectedCivilizations))
                 .Select(card => card.Name)
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .Count();
-            var controlsY = area.yMax - 82f;
-            if (GUI.Button(new Rect(area.x + 14f, controlsY, 128f, 38f), "Select All"))
+            GUI.backgroundColor = new Color(0.14f, 0.17f, 0.22f);
+            GUI.Label(new Rect(area.x + 14f, civilizationY + 66f, area.width - 28f, 46f),
+                $"{selectedSets.Count} set(s) • {selectedCivilizations.Count} civilization(s)\n" +
+                $"{selectedCards} printings • {uniqueNames} card names");
+
+            var controlsY = area.yMax - 52f;
+            var buttonWidth = (area.width - 58f) * 0.25f;
+            if (GUI.Button(new Rect(area.x + 14f, controlsY, buttonWidth, 38f), "All Sets"))
                 foreach (var setCode in SelectableSetCodes) selectedSets.Add(setCode);
-            if (GUI.Button(new Rect(area.x + 150f, controlsY, 100f, 38f), "Clear"))
+            if (GUI.Button(new Rect(area.x + 20f + buttonWidth, controlsY, buttonWidth, 38f), "Clear Sets"))
                 selectedSets.Clear();
-            GUI.Label(new Rect(area.x + 268f, controlsY - 2f, area.width - 280f, 46f),
-                $"{selectedSets.Count} set(s)\n{selectedCards} printings • {uniqueNames} card names");
+            if (GUI.Button(new Rect(area.x + 26f + buttonWidth * 2f, controlsY, buttonWidth, 38f), "All Civs"))
+                foreach (var civilization in SelectableCivilizations)
+                    selectedCivilizations.Add(civilization);
+            if (GUI.Button(new Rect(area.x + 32f + buttonWidth * 3f, controlsY, buttonWidth, 38f), "Clear Civs"))
+                selectedCivilizations.Clear();
         }
 
-        private static bool CanBuildDeckFromSets(HashSet<string> selectedSets)
+        private static int CountPlayableCardNames(
+            HashSet<string> selectedSets,
+            HashSet<Civilization> selectedCivilizations)
         {
-            if (selectedSets.Count == 0) return false;
-            var uniqueNames = TcgCatalog.Printings.Where(card =>
-                    selectedSets.Contains(card.SetCode) &&
-                    card.ImplementationStatus == CardImplementationStatus.Complete)
+            if (selectedSets.Count == 0 || selectedCivilizations.Count == 0) return 0;
+            return TcgCatalog.Printings.Where(card =>
+                    CardMatchesDeckPool(card, selectedSets, selectedCivilizations))
                 .Select(card => card.Name)
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .Count();
-            return uniqueNames >= 10;
         }
+
+        private static bool CardMatchesDeckPool(
+            CardDefinition card,
+            HashSet<string> selectedSets,
+            HashSet<Civilization> selectedCivilizations) =>
+            selectedSets.Contains(card.SetCode) &&
+            card.ImplementationStatus == CardImplementationStatus.Complete &&
+            card.Civilizations.Length > 0 &&
+            card.Civilizations.All(selectedCivilizations.Contains);
 
         private void StartSelectedMatch()
         {
@@ -287,17 +364,21 @@ namespace CardGame.Presentation
                 _matchSeed = unchecked(Environment.TickCount * 397 ^ Guid.NewGuid().GetHashCode());
                 var humanSets = OrderedSelectedSets(_humanSelectedSets);
                 var computerSets = OrderedSelectedSets(_computerSelectedSets);
+                var humanCivilizations = OrderedSelectedCivilizations(_humanSelectedCivilizations);
+                var computerCivilizations = OrderedSelectedCivilizations(_computerSelectedCivilizations);
                 var humanDeck = TcgCatalog.BuildRandomDeckFromSets(
-                    humanSets, unchecked(_matchSeed ^ 0x5f3759df));
+                    humanSets, humanCivilizations, unchecked(_matchSeed ^ 0x5f3759df));
                 var computerDeck = TcgCatalog.BuildRandomDeckFromSets(
-                    computerSets, unchecked(_matchSeed ^ (int)0x9e3779b9));
+                    computerSets, computerCivilizations, unchecked(_matchSeed ^ (int)0x9e3779b9));
 
                 _engine = new RulesEngine();
                 _state = _engine.StartGame(humanDeck, computerDeck, _matchSeed, HumanId);
                 _humanDeckLabel = FormatSetSelection(humanSets);
                 _computerDeckLabel = FormatSetSelection(computerSets);
+                _humanCivilizationLabel = FormatCivilizationSelection(humanCivilizations);
+                _computerCivilizationLabel = FormatCivilizationSelection(computerCivilizations);
                 _message = "Choose a card, charge mana, and play a card.";
-                _setupMessage = "Choose one or more sets for each deck pool.";
+                _setupMessage = "Choose one or more sets and civilizations for each deck pool.";
                 _busy = false;
                 _awaitingHumanBlock = false;
                 _showDeckSetup = false;
@@ -312,6 +393,8 @@ namespace CardGame.Presentation
                 _handScroll = Vector2.zero;
                 _humanBattleScroll = Vector2.zero;
                 _computerBattleScroll = Vector2.zero;
+                _humanManaScroll = Vector2.zero;
+                _computerManaScroll = Vector2.zero;
                 _manaSelectionScroll = Vector2.zero;
                 _battleActionScroll = Vector2.zero;
                 _artRequests.Clear();
@@ -328,10 +411,22 @@ namespace CardGame.Presentation
         private static string[] OrderedSelectedSets(HashSet<string> selectedSets) =>
             SelectableSetCodes.Where(selectedSets.Contains).ToArray();
 
+        private static Civilization[] OrderedSelectedCivilizations(
+            HashSet<Civilization> selectedCivilizations) =>
+            SelectableCivilizations.Where(selectedCivilizations.Contains).ToArray();
+
         private static string FormatSetSelection(IReadOnlyCollection<string> sets)
         {
             if (sets.Count == SelectableSetCodes.Length) return "All TCG sets";
             return sets.Count <= 4 ? string.Join(", ", sets) : $"{sets.Count} selected sets";
+        }
+
+        private static string FormatCivilizationSelection(IReadOnlyCollection<Civilization> civilizations)
+        {
+            if (civilizations.Count == SelectableCivilizations.Length) return "All civilizations";
+            return civilizations.Count <= 3
+                ? string.Join(", ", civilizations)
+                : $"{civilizations.Count} civilizations";
         }
 
         private void ReturnToDeckSetup()
@@ -347,48 +442,76 @@ namespace CardGame.Presentation
             _selectedCreature = null;
             _selectedOpponentCreature = null;
             _showDeckSetup = true;
-            _setupMessage = "Change either pool, then build two newly randomized decks.";
+            _setupMessage = "Change either set/civilization pool, then build two newly randomized decks.";
         }
 
         private void DrawHeader()
         {
-            GUI.backgroundColor = new Color(0.18f, 0.21f, 0.27f);
-            GUI.Box(new Rect(0, 0, _uiWidth, 42), GUIContent.none);
+            GUI.backgroundColor = new Color(0.12f, 0.16f, 0.22f);
+            GUI.Box(new Rect(0, 0, _uiWidth, 48f), GUIContent.none);
             GUI.color = Color.white;
-            GUI.Label(new Rect(16, 8, 500, 26),
-                $"Turn {_state.TurnNumber}  •  {(_state.ActivePlayerId == HumanId ? "Your turn" : "Computer turn")}  •  {_state.Phase}  •  Shuffle {_matchSeed}");
-            GUI.Label(new Rect(520, 8, _uiWidth - 820, 26), _message);
+            var turnStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 16,
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleLeft
+            };
+            var messageStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 15,
+                alignment = TextAnchor.MiddleCenter,
+                wordWrap = true
+            };
+            GUI.Label(new Rect(16f, 5f, 430f, 38f),
+                $"TURN {_state.TurnNumber}  •  {(_state.ActivePlayerId == HumanId ? "YOUR TURN" : "COMPUTER TURN")}  •  {_state.Phase}",
+                turnStyle);
+            GUI.Label(new Rect(448f, 5f, 830f, 38f), _message, messageStyle);
             _animationsEnabled = GUI.Toggle(
-                new Rect(_uiWidth - 270, 8, 250, 26), _animationsEnabled, " Play attack animations");
+                new Rect(_uiWidth - 292f, 10f, 274f, 28f), _animationsEnabled, " Play attack animations");
         }
 
         private void DrawBoard()
         {
-            var panelWidth = 280f;
-            var boardWidth = _uiWidth - panelWidth;
-            var handHeight = Mathf.Clamp(_uiHeight * 0.24f, 170f, 230f);
-            var hiddenZoneHeight = Mathf.Clamp(_uiHeight * 0.105f, 82f, 100f);
-            var manaZoneHeight = Mathf.Clamp(_uiHeight * 0.085f, 72f, 88f);
-            var fixedHeight = 50f + 36f + hiddenZoneHeight * 2f + manaZoneHeight * 2f + handHeight + 52f;
-            var battleHeight = Mathf.Max(88f, (_uiHeight - fixedHeight) / 2f);
-            var y = 50f;
+            var board = new Rect(16f, 56f, 1268f, 832f);
+            var innerX = board.x + 8f;
+            var innerWidth = board.width - 16f;
 
-            DrawPlayerSummary(_state.Players[ComputerId], new Rect(12, y, boardWidth - 24, 32),
-                $"COMPUTER — {_computerDeckLabel} pool");
-            y += 36f;
-            DrawDeckShieldsAndHiddenHand(_state.Players[ComputerId], new Rect(12, y, boardWidth - 24, hiddenZoneHeight), true);
-            y += hiddenZoneHeight + 6f;
-            DrawManaRow(_state.Players[ComputerId], new Rect(12, y, boardWidth - 24, manaZoneHeight), "Opponent Mana", true);
-            y += manaZoneHeight + 6f;
-            DrawCardRow(_state.Players[ComputerId].BattleZone, new Rect(12, y, boardWidth - 24, battleHeight),
+            GUI.backgroundColor = new Color(0.10f, 0.15f, 0.19f);
+            GUI.Box(board, GUIContent.none);
+            GUI.backgroundColor = new Color(0.13f, 0.20f, 0.25f);
+            GUI.Box(new Rect(board.x + 4f, board.y + 4f, board.width - 8f, 384f), GUIContent.none);
+            GUI.backgroundColor = new Color(0.21f, 0.18f, 0.16f);
+            GUI.Box(new Rect(board.x + 4f, board.y + 444f, board.width - 8f, 384f), GUIContent.none);
+
+            DrawPlayerRail(_state.Players[ComputerId],
+                new Rect(innerX, 64f, innerWidth, 120f), true);
+            DrawManaRow(_state.Players[ComputerId],
+                new Rect(innerX, 190f, innerWidth, 66f), "OPPONENT MANA • FACE UP", true,
+                ref _computerManaScroll);
+            DrawCardRow(_state.Players[ComputerId].BattleZone,
+                new Rect(innerX, 262f, innerWidth, 142f),
                 ref _computerBattleScroll, card =>
                 {
                     _selectedOpponentCreature = card;
                     OpenFaceUpCardViewer(card, _state.Players[ComputerId].BattleZone, "Opponent Battle Zone");
-                }, _selectedOpponentCreature, false, "Computer Battle Zone");
+                }, _selectedOpponentCreature, false, "OPPONENT BATTLE ZONE");
 
-            y += battleHeight + 6f;
-            DrawCardRow(_state.Players[HumanId].BattleZone, new Rect(12, y, boardWidth - 24, battleHeight),
+            GUI.backgroundColor = _state.ActivePlayerId == HumanId
+                ? new Color(0.34f, 0.43f, 0.30f)
+                : new Color(0.27f, 0.34f, 0.43f);
+            GUI.Box(new Rect(innerX, 410f, innerWidth, 34f), GUIContent.none);
+            var battleLineStyle = new GUIStyle(GUI.skin.label)
+            {
+                alignment = TextAnchor.MiddleCenter,
+                fontSize = 14,
+                fontStyle = FontStyle.Bold
+            };
+            GUI.Label(new Rect(innerX, 410f, innerWidth, 34f),
+                _state.ActivePlayerId == HumanId ? "YOUR ACTION • BATTLE LINE" : "COMPUTER ACTION • BATTLE LINE",
+                battleLineStyle);
+
+            DrawCardRow(_state.Players[HumanId].BattleZone,
+                new Rect(innerX, 450f, innerWidth, 142f),
                 ref _humanBattleScroll, card =>
                 {
                     if (!_busy && _state.ActivePlayerId == HumanId)
@@ -397,73 +520,145 @@ namespace CardGame.Presentation
                         _selectedHand = null;
                     }
                     OpenFaceUpCardViewer(card, _state.Players[HumanId].BattleZone, "Your Battle Zone");
-                }, _selectedCreature, false, "Your Battle Zone");
+                }, _selectedCreature, false, "YOUR BATTLE ZONE");
 
-            y += battleHeight + 6f;
-            DrawDeckShieldsAndHiddenHand(_state.Players[HumanId], new Rect(12, y, boardWidth - 24, hiddenZoneHeight), false);
-            y += hiddenZoneHeight + 6f;
-            DrawManaRow(_state.Players[HumanId], new Rect(12, y, boardWidth - 24, manaZoneHeight), "Your Mana — face up, reversed", true);
-            y += manaZoneHeight + 6f;
-            DrawCardRow(_state.Players[HumanId].Hand, new Rect(12, y, boardWidth - 24,
-                    Mathf.Min(handHeight, _uiHeight - y - 10f)),
-                ref _handScroll, card =>
-                {
-                    if (!_busy && _state.ActivePlayerId == HumanId)
-                    {
-                        OpenHandCardViewer(card);
-                    }
-                }, _selectedHand, false, "Your Hand");
+            DrawManaRow(_state.Players[HumanId],
+                new Rect(innerX, 598f, innerWidth, 66f), "YOUR MANA • FACE UP & REVERSED", true,
+                ref _humanManaScroll);
+            DrawPlayerRail(_state.Players[HumanId],
+                new Rect(innerX, 670f, innerWidth, 210f), false);
         }
 
-        private void DrawDeckShieldsAndHiddenHand(PlayerState player, Rect area, bool hideHand)
+        private void DrawPlayerRail(PlayerState player, Rect area, bool opponent)
         {
-            GUI.backgroundColor = new Color(0.18f, 0.21f, 0.27f);
+            GUI.backgroundColor = opponent
+                ? new Color(0.11f, 0.15f, 0.21f)
+                : new Color(0.16f, 0.13f, 0.12f);
             GUI.Box(area, GUIContent.none);
-            var cardHeight = Mathf.Max(52f, area.height - 28f);
-            var cardWidth = cardHeight * 0.67f;
-            var top = area.y + 23f;
-            var x = area.x + 10f;
+            var poolLabel = opponent
+                ? $"COMPUTER  •  {_computerDeckLabel}  •  {_computerCivilizationLabel}"
+                : $"YOU  •  {_humanDeckLabel}  •  {_humanCivilizationLabel}";
+            DrawPlayerSummary(player, new Rect(area.x + 12f, area.y + 3f, area.width - 24f, 22f), poolLabel);
 
-            GUI.color = Color.white;
-            GUI.Label(new Rect(x, area.y + 3f, 120f, 20f), hideHand ? "Opponent Deck" : "Your Deck");
-            DrawCardBack(new Rect(x + 4f, top - 4f, cardWidth, cardHeight), string.Empty);
-            DrawCardBack(new Rect(x + 2f, top - 2f, cardWidth, cardHeight), string.Empty);
-            DrawCardBack(new Rect(x, top, cardWidth, cardHeight), player.Deck.Count.ToString());
+            var contentTop = area.y + 45f;
+            var utilityCardHeight = opponent ? 70f : 94f;
+            var utilityCardWidth = utilityCardHeight * 0.67f;
+            var deckX = area.x + 12f;
+            var shieldsX = area.x + 92f;
+            const float shieldLaneWidth = 244f;
+            var graveyardX = shieldsX + shieldLaneWidth + 20f;
+            var handX = area.x + 452f;
 
-            x += cardWidth + 28f;
-            GUI.Label(new Rect(x, area.y + 3f, 180f, 20f), $"Shields ({player.Shields.Count})");
-            for (var i = 0; i < player.Shields.Count; i++)
-            {
-                DrawCardBack(new Rect(x + i * (cardWidth + 7f), top, cardWidth, cardHeight), string.Empty);
-            }
+            DrawZoneCaption(new Rect(deckX, area.y + 25f, 76f, 20f), "DECK");
+            DrawDeckStack(new Rect(deckX, contentTop, utilityCardWidth, utilityCardHeight), player.Deck.Count);
 
-            x += Mathf.Max(5, player.Shields.Count) * (cardWidth + 7f) + 30f;
-            GUI.Label(new Rect(x, area.y + 3f, 180f, 20f), $"Graveyard ({player.Graveyard.Count})");
-            var graveyardRect = new Rect(x, top, cardWidth, cardHeight);
-            if (player.Graveyard.Count > 0)
-            {
-                GUI.backgroundColor = new Color(0.09f, 0.09f, 0.11f);
-                GUI.Box(new Rect(graveyardRect.x + 4f, graveyardRect.y - 4f, graveyardRect.width, graveyardRect.height), GUIContent.none);
-                GUI.Box(new Rect(graveyardRect.x + 2f, graveyardRect.y - 2f, graveyardRect.width, graveyardRect.height), GUIContent.none);
-                var topCard = player.Graveyard[player.Graveyard.Count - 1];
-                DrawCardButton(topCard, graveyardRect, false, false,
-                    () => OpenFaceUpCardViewer(topCard, player.Graveyard,
-                        player.PlayerId == HumanId ? "Your Graveyard" : "Opponent Graveyard"));
-            }
+            DrawZoneCaption(new Rect(shieldsX, area.y + 25f, shieldLaneWidth, 20f),
+                $"SHIELDS ({player.Shields.Count})");
+            DrawShieldRow(player.Shields.Count,
+                new Rect(shieldsX, contentTop, shieldLaneWidth, utilityCardHeight), utilityCardWidth);
+
+            DrawZoneCaption(new Rect(graveyardX, area.y + 25f, 92f, 20f),
+                $"GRAVE ({player.Graveyard.Count})");
+            DrawGraveyard(player,
+                new Rect(graveyardX, contentTop, utilityCardWidth, utilityCardHeight));
+
+            var handArea = new Rect(handX, contentTop, area.xMax - handX - 10f,
+                area.yMax - contentTop - 6f);
+            DrawZoneCaption(new Rect(handX, area.y + 25f, handArea.width, 20f),
+                opponent ? $"OPPONENT HAND ({player.Hand.Count})" : $"YOUR HAND ({player.Hand.Count})");
+            if (opponent)
+                DrawHiddenHand(player.Hand.Count, handArea);
             else
+                DrawVisibleHand(player.Hand, handArea);
+        }
+
+        private static void DrawZoneCaption(Rect rect, string text)
+        {
+            var style = new GUIStyle(GUI.skin.label)
             {
-                GUI.backgroundColor = new Color(0.09f, 0.09f, 0.11f);
-                GUI.Box(graveyardRect, "EMPTY");
+                fontSize = 12,
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleLeft
+            };
+            GUI.color = new Color(0.83f, 0.88f, 0.93f);
+            GUI.Label(rect, text, style);
+            GUI.color = Color.white;
+        }
+
+        private void DrawDeckStack(Rect rect, int count)
+        {
+            DrawCardBack(new Rect(rect.x + 5f, rect.y - 5f, rect.width, rect.height), string.Empty);
+            DrawCardBack(new Rect(rect.x + 2.5f, rect.y - 2.5f, rect.width, rect.height), string.Empty);
+            DrawCardBack(rect, count.ToString());
+        }
+
+        private void DrawShieldRow(int shieldCount, Rect lane, float cardWidth)
+        {
+            if (shieldCount == 0)
+            {
+                GUI.backgroundColor = new Color(0.07f, 0.08f, 0.10f);
+                GUI.Box(new Rect(lane.x, lane.y, cardWidth, lane.height), "EMPTY");
+                return;
             }
 
-            if (!hideHand) return;
-            x += cardWidth + 30f;
-            GUI.Label(new Rect(x, area.y + 3f, 180f, 20f), $"Opponent Hand ({player.Hand.Count})");
-            var shownCards = Mathf.Min(player.Hand.Count, 8);
-            for (var i = 0; i < shownCards; i++)
+            var stride = shieldCount == 1
+                ? 0f
+                : Mathf.Min(cardWidth + 6f, (lane.width - cardWidth) / (shieldCount - 1));
+            for (var i = 0; i < shieldCount; i++)
+                DrawCardBack(new Rect(lane.x + i * stride, lane.y, cardWidth, lane.height), string.Empty);
+        }
+
+        private void DrawGraveyard(PlayerState player, Rect rect)
+        {
+            if (player.Graveyard.Count == 0)
             {
-                DrawCardBack(new Rect(x + i * (cardWidth * 0.48f), top, cardWidth, cardHeight), string.Empty);
+                GUI.backgroundColor = new Color(0.07f, 0.08f, 0.10f);
+                GUI.Box(rect, "EMPTY");
+                return;
             }
+
+            GUI.backgroundColor = new Color(0.06f, 0.07f, 0.09f);
+            GUI.Box(new Rect(rect.x + 5f, rect.y - 5f, rect.width, rect.height), GUIContent.none);
+            GUI.Box(new Rect(rect.x + 2.5f, rect.y - 2.5f, rect.width, rect.height), GUIContent.none);
+            var topCard = player.Graveyard[player.Graveyard.Count - 1];
+            DrawCardButton(topCard, rect, false, false,
+                () => OpenFaceUpCardViewer(topCard, player.Graveyard,
+                    player.PlayerId == HumanId ? "Your Graveyard" : "Opponent Graveyard"));
+        }
+
+        private void DrawHiddenHand(int cardCount, Rect area)
+        {
+            if (cardCount == 0) return;
+            var cardHeight = Mathf.Min(76f, area.height);
+            var cardWidth = cardHeight * 0.67f;
+            var shownCards = Mathf.Min(cardCount, 10);
+            var stride = cardWidth * 0.48f;
+            var totalWidth = cardWidth + (shownCards - 1) * stride;
+            var x = area.x + Mathf.Max(0f, (area.width - totalWidth) * 0.5f);
+            for (var i = 0; i < shownCards; i++)
+                DrawCardBack(new Rect(x + i * stride, area.y, cardWidth, cardHeight), string.Empty);
+        }
+
+        private void DrawVisibleHand(IReadOnlyList<CardInstance> cards, Rect area)
+        {
+            var cardHeight = Mathf.Min(150f, area.height - 16f);
+            var cardWidth = cardHeight * 0.67f;
+            var stride = Mathf.Max(72f, cardWidth * 0.78f);
+            var totalWidth = cards.Count == 0 ? 0f : cardWidth + (cards.Count - 1) * stride;
+            var contentWidth = Mathf.Max(area.width - 18f, totalWidth);
+            var content = new Rect(0f, 0f, contentWidth, cardHeight);
+            var startX = Mathf.Max(0f, (contentWidth - totalWidth) * 0.5f);
+            _handScroll = GUI.BeginScrollView(area, _handScroll, content);
+            for (var i = 0; i < cards.Count; i++)
+            {
+                var card = cards[i];
+                var rect = new Rect(startX + i * stride, 0f, cardWidth, cardHeight);
+                DrawCardButton(card, rect, _selectedHand == card, false, () =>
+                {
+                    if (!_busy && _state.ActivePlayerId == HumanId) OpenHandCardViewer(card);
+                });
+            }
+            GUI.EndScrollView();
         }
 
         private void DrawCardBack(Rect rect, string count)
@@ -487,20 +682,32 @@ namespace CardGame.Presentation
         {
             GUI.color = Color.white;
             GUI.Label(rect,
-                $"{label}     Hand {player.Hand.Count}   Shields {player.Shields.Count}   Mana {player.Mana.Count}   Deck {player.Deck.Count}   Graveyard {player.Graveyard.Count}");
+                $"{label}     HAND {player.Hand.Count}   •   SHIELDS {player.Shields.Count}   •   MANA {player.Mana.Count}   •   DECK {player.Deck.Count}   •   GRAVE {player.Graveyard.Count}");
         }
 
-        private void DrawManaRow(PlayerState player, Rect rect, string label, bool reverseArtwork)
+        private void DrawManaRow(
+            PlayerState player,
+            Rect rect,
+            string label,
+            bool reverseArtwork,
+            ref Vector2 scroll)
         {
+            GUI.backgroundColor = new Color(0.10f, 0.12f, 0.14f);
             GUI.Box(rect, GUIContent.none);
-            GUI.Label(new Rect(rect.x + 8f, rect.y + 3f, 260f, 22f), $"{label} ({player.Mana.Count})");
-            var inner = new Rect(rect.x + 6f, rect.y + 25f, rect.width - 12f, rect.height - 29f);
-            var cardHeight = Mathf.Max(42f, inner.height);
+            DrawZoneCaption(new Rect(rect.x + 10f, rect.y + 4f, 186f, rect.height - 8f),
+                $"{label} ({player.Mana.Count})");
+            var inner = new Rect(rect.x + 196f, rect.y + 5f, rect.width - 204f, rect.height - 10f);
+            var cardHeight = Mathf.Max(42f, inner.height - 16f);
             var cardWidth = cardHeight * 0.67f;
+            var totalWidth = player.Mana.Count == 0 ? 0f : player.Mana.Count * (cardWidth + 7f) - 7f;
+            var contentWidth = Mathf.Max(inner.width - 18f, totalWidth);
+            var content = new Rect(0f, 0f, contentWidth, cardHeight);
+            var startX = Mathf.Max(0f, (contentWidth - totalWidth) * 0.5f);
+            scroll = GUI.BeginScrollView(inner, scroll, content);
             for (var i = 0; i < player.Mana.Count; i++)
             {
                 var mana = player.Mana[i];
-                var cardRect = new Rect(inner.x + i * (cardWidth + 7f), inner.y, cardWidth, cardHeight);
+                var cardRect = new Rect(startX + i * (cardWidth + 7f), 0f, cardWidth, cardHeight);
                 GUI.backgroundColor = CivilizationColor(mana.Definition);
                 if (GUI.Button(cardRect, GUIContent.none) && !_showHandCardViewer && !_showVideo)
                     OpenFaceUpCardViewer(mana, player.Mana, label);
@@ -520,6 +727,7 @@ namespace CardGame.Presentation
                     GUI.color = Color.white;
                 }
             }
+            GUI.EndScrollView();
             GUI.color = Color.white;
         }
 
@@ -532,17 +740,24 @@ namespace CardGame.Presentation
             bool faceDown,
             string label)
         {
+            GUI.backgroundColor = label.StartsWith("OPPONENT", StringComparison.Ordinal)
+                ? new Color(0.12f, 0.18f, 0.22f)
+                : new Color(0.22f, 0.18f, 0.15f);
             GUI.Box(area, GUIContent.none);
-            GUI.Label(new Rect(area.x + 7, area.y + 3, 180, 22), label);
-            var inner = new Rect(area.x + 4, area.y + 24, area.width - 8, area.height - 28);
-            var visibleCardHeight = Mathf.Min(158f, inner.height - 18f);
-            var cardWidth = Mathf.Clamp(visibleCardHeight * 0.66f, 72f, 104f);
-            var content = new Rect(0, 0, Mathf.Max(inner.width - 18, cards.Count * (cardWidth + 8)), visibleCardHeight);
+            DrawZoneCaption(new Rect(area.x + 9f, area.y + 3f, 230f, 22f),
+                $"{label} ({cards.Count})");
+            var inner = new Rect(area.x + 5f, area.y + 25f, area.width - 10f, area.height - 30f);
+            var visibleCardHeight = Mathf.Min(122f, inner.height - 7f);
+            var cardWidth = Mathf.Clamp(visibleCardHeight * 0.67f, 58f, 98f);
+            var totalWidth = cards.Count == 0 ? 0f : cards.Count * (cardWidth + 10f) - 10f;
+            var contentWidth = Mathf.Max(inner.width - 18f, totalWidth);
+            var content = new Rect(0f, 0f, contentWidth, visibleCardHeight);
+            var startX = Mathf.Max(0f, (contentWidth - totalWidth) * 0.5f);
             scroll = GUI.BeginScrollView(inner, scroll, content);
             for (var i = 0; i < cards.Count; i++)
             {
                 var card = cards[i];
-                var rect = new Rect(i * (cardWidth + 8), 0, cardWidth, content.height);
+                var rect = new Rect(startX + i * (cardWidth + 10f), 0f, cardWidth, content.height);
                 DrawCardButton(card, rect, selected == card, faceDown, () => onClick(card));
             }
             GUI.EndScrollView();
@@ -595,13 +810,19 @@ namespace CardGame.Presentation
 
         private void DrawControlPanel()
         {
-            var rect = new Rect(_uiWidth - 270, 52, 258, _uiHeight - 64);
-            GUI.backgroundColor = new Color(0.20f, 0.22f, 0.27f);
+            var rect = new Rect(1296f, 56f, 288f, 832f);
+            GUI.backgroundColor = new Color(0.13f, 0.16f, 0.21f);
             GUI.Box(rect, GUIContent.none);
             GUILayout.BeginArea(new Rect(rect.x + 10, rect.y + 10, rect.width - 20, rect.height - 20));
-            GUILayout.Label("DUEL CONTROLS");
-            GUILayout.Label($"Your pool: {_humanDeckLabel}");
-            GUILayout.Label($"Computer pool: {_computerDeckLabel}");
+            var wrapStyle = new GUIStyle(GUI.skin.label) { wordWrap = true };
+            var panelHeadingStyle = new GUIStyle(wrapStyle)
+            {
+                fontSize = 17,
+                fontStyle = FontStyle.Bold
+            };
+            GUILayout.Label("DUEL CONTROLS", panelHeadingStyle);
+            GUILayout.Label($"Your pool: {_humanDeckLabel} • {_humanCivilizationLabel}", wrapStyle);
+            GUILayout.Label($"Computer: {_computerDeckLabel} • {_computerCivilizationLabel}", wrapStyle);
             GUILayout.Space(6);
 
             var selected = _selectedHand ?? _selectedCreature ?? _selectedOpponentCreature;
@@ -609,7 +830,7 @@ namespace CardGame.Presentation
             {
                 GUILayout.Label(selected.Definition.Name);
                 GUILayout.Label($"Cost {selected.Definition.Cost}  •  Power {selected.Definition.Power}");
-                GUILayout.Label(selected.Definition.RulesText);
+                GUILayout.Label(selected.Definition.RulesText, wrapStyle);
                 GUILayout.Space(8);
             }
 
@@ -1280,6 +1501,23 @@ namespace CardGame.Presentation
             if (card.Civilizations.Contains(Civilization.Water)) return new Color(0.12f, 0.38f, 0.62f);
             if (card.Civilizations.Contains(Civilization.Nature)) return new Color(0.18f, 0.52f, 0.25f);
             return new Color(0.72f, 0.62f, 0.22f);
+        }
+
+        private static Color CivilizationColor(Civilization civilization)
+        {
+            switch (civilization)
+            {
+                case Civilization.Fire:
+                    return new Color(0.56f, 0.18f, 0.12f);
+                case Civilization.Darkness:
+                    return new Color(0.30f, 0.18f, 0.38f);
+                case Civilization.Water:
+                    return new Color(0.12f, 0.38f, 0.62f);
+                case Civilization.Nature:
+                    return new Color(0.18f, 0.52f, 0.25f);
+                default:
+                    return new Color(0.72f, 0.62f, 0.22f);
+            }
         }
 
         private void OnDestroy()

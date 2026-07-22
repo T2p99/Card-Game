@@ -15,6 +15,8 @@ Implemented starter spells currently include Burning Power, Crimson Hammer, Magm
 3. Open with Unity `6000.5.4f1`.
 4. Let Unity restore packages and generate missing local cache files.
 
+The duel interface is landscape-first. In the Unity **Game** tab, select a `16:9` aspect ratio to preview the same centered tabletop layout used on mobile. Before each duel, both players can independently filter their generated deck pools by card set and civilization; a multicolored card is eligible only when every civilization printed on it is selected.
+
 See [docs/RULES_AND_SCOPE.md](docs/RULES_AND_SCOPE.md) for implemented rules and known gaps.
 
 ## Original TCG card and media import

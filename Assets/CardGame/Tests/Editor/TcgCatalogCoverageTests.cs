@@ -77,6 +77,30 @@ namespace CardGame.Core.Tests
         }
 
         [Test]
+        public void RandomDeckFromSetsAndCivilizations_UsesOnlyTheSelectedCivilizations()
+        {
+            var deck = TcgCatalog.BuildRandomDeckFromSets(
+                new[] { "DM-01" },
+                new[] { Civilization.Fire },
+                seed: 2004);
+
+            Assert.That(deck.Count, Is.EqualTo(40));
+            Assert.That(deck.All(card => card.Civilizations.Length > 0 &&
+                                             card.Civilizations.All(civilization =>
+                                                 civilization == Civilization.Fire)), Is.True);
+            Assert.That(deck.GroupBy(card => card.Name, StringComparer.OrdinalIgnoreCase)
+                .Max(group => group.Count()), Is.LessThanOrEqualTo(4));
+        }
+
+        [Test]
+        public void RandomDeckFromSetsAndCivilizations_RejectsAnEmptyCivilizationSelection()
+        {
+            Assert.That(() => TcgCatalog.BuildRandomDeckFromSets(
+                    new[] { "DM-01" }, Array.Empty<Civilization>(), seed: 1),
+                Throws.ArgumentException.With.Message.Contains("at least one civilization"));
+        }
+
+        [Test]
         public void RandomDeckFromSets_RejectsMissingOrUnknownSelection()
         {
             Assert.That(() => TcgCatalog.BuildRandomDeckFromSets(Array.Empty<string>(), seed: 1),

@@ -24,9 +24,20 @@ namespace CardGame.Core
         public static IReadOnlyList<CardDefinition> BuildRandomDeckFromSets(
             IEnumerable<string> setCodes,
             int seed,
+            int deckSize = 40) => BuildRandomDeckFromSets(
+                setCodes,
+                Enum.GetValues(typeof(Civilization)).Cast<Civilization>(),
+                seed,
+                deckSize);
+
+        public static IReadOnlyList<CardDefinition> BuildRandomDeckFromSets(
+            IEnumerable<string> setCodes,
+            IEnumerable<Civilization> civilizations,
+            int seed,
             int deckSize = 40)
         {
             if (setCodes == null) throw new ArgumentNullException(nameof(setCodes));
+            if (civilizations == null) throw new ArgumentNullException(nameof(civilizations));
             if (deckSize <= 0) throw new ArgumentOutOfRangeException(nameof(deckSize));
 
             var selectedSets = new HashSet<string>(
@@ -41,8 +52,21 @@ namespace CardGame.Core
             if (unknownSets.Length > 0)
                 throw new ArgumentException($"Unknown card set: {string.Join(", ", unknownSets)}.", nameof(setCodes));
 
+            var selectedCivilizations = new HashSet<Civilization>(civilizations);
+            if (selectedCivilizations.Count == 0)
+                throw new ArgumentException("Choose at least one civilization.", nameof(civilizations));
+            var unknownCivilizations = selectedCivilizations
+                .Where(civilization => !Enum.IsDefined(typeof(Civilization), civilization))
+                .ToArray();
+            if (unknownCivilizations.Length > 0)
+                throw new ArgumentException(
+                    $"Unknown civilization value: {string.Join(", ", unknownCivilizations)}.",
+                    nameof(civilizations));
+
             var cardsByName = Printings
                 .Where(card => selectedSets.Contains(card.SetCode) &&
+                               card.Civilizations.Length > 0 &&
+                               card.Civilizations.All(selectedCivilizations.Contains) &&
                                card.ImplementationStatus == CardImplementationStatus.Complete)
                 .GroupBy(card => card.Name, StringComparer.OrdinalIgnoreCase)
                 .OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase)
@@ -52,9 +76,9 @@ namespace CardGame.Core
             const int maximumCopiesPerCard = 4;
             if (cardsByName.Length * maximumCopiesPerCard < deckSize)
                 throw new ArgumentException(
-                    $"The selected sets contain only {cardsByName.Length} playable card names; " +
+                    $"The selected sets and civilizations contain only {cardsByName.Length} playable card names; " +
                     $"at least {(deckSize + maximumCopiesPerCard - 1) / maximumCopiesPerCard} are needed for a legal {deckSize}-card deck.",
-                    nameof(setCodes));
+                    nameof(civilizations));
 
             var random = new Random(seed);
             var copyCounts = new int[cardsByName.Length];
