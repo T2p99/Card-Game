@@ -72,6 +72,22 @@ namespace CardGame.Core.Tests
         }
 
         [Test]
+        public void Catalog_UsesCanonicalTcgDefinitionsWithoutBreakingLegacyDeckKeys()
+        {
+            foreach (var pair in StarterDeckCatalog.Cards)
+            {
+                var canonical = TcgCatalog.Printings.Single(card =>
+                    card.SetCode == pair.Value.SetCode &&
+                    card.CollectorNumber == pair.Value.CollectorNumber);
+
+                Assert.That(pair.Value, Is.SameAs(canonical),
+                    $"Starter key {pair.Key} drifted from the canonical TCG catalog.");
+                Assert.That(pair.Value.ImplementationStatus,
+                    Is.EqualTo(CardImplementationStatus.Complete));
+            }
+        }
+
+        [Test]
         public void Catalog_MapsDatabaseImagesAndAttackVideos()
         {
             var brawler = StarterDeckCatalog.Cards["dm01-070"];

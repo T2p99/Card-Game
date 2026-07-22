@@ -43,6 +43,7 @@ namespace CardGame.Core
         private static readonly Regex PowerAttacker = new Regex(@"^Power attacker \+(\d+)", RegexOptions.IgnoreCase);
         private static readonly Regex SingleEvolution = new Regex(@"^Evolution—Put on one of your (.+)\.$", RegexOptions.IgnoreCase);
         private static readonly Regex VortexEvolution = new Regex(@"^Vortex evolution—Put on one of your (.+?) and one of your (.+?)\.$", RegexOptions.IgnoreCase);
+        private static readonly Regex CrewBreaker = new Regex(@"^Crew breaker—(.+?) \(", RegexOptions.IgnoreCase);
         private static readonly Regex DestroyPower = new Regex(@"^Destroy (?:one|1) of your opponent's creatures that has power (\d+) or less\.$", RegexOptions.IgnoreCase);
         private static readonly Regex SummonDestroyPower = new Regex(@"^When you put this creature into the battle zone, (?:you may )?destroy one of your opponent's creatures that has power (\d+) or less\.$", RegexOptions.IgnoreCase);
         private static readonly Regex DrawCards = new Regex(@"^Draw (?:up to )?(\d+) cards?\.$", RegexOptions.IgnoreCase);
@@ -50,45 +51,8 @@ namespace CardGame.Core
         private static readonly Regex TopDeckToMana = new Regex(@"^Put the top (?:(\d+) cards?|card) of your deck into your mana zone\.$", RegexOptions.IgnoreCase);
         private static readonly Regex SummonTopDeckToMana = new Regex(@"^When you put this creature into the battle zone, (?:you may )?put the top (?:(\d+) cards?|card) of your deck into your mana zone\.$", RegexOptions.IgnoreCase);
 
-        public static readonly IReadOnlyList<AbilityHandlerMetadata> Handlers = Array.AsReadOnly(new[]
-        {
-            H("keyword.blocker", "Keyword", "Allows the creature to intercept an eligible attack."),
-            H("keyword.shield_trigger", "Keyword", "Allows a card broken from shields to be played for no cost."),
-            H("keyword.speed_attacker", "Keyword", "Ignores summoning sickness when attacking players."),
-            H("keyword.double_breaker", "Keyword", "Breaks two shields."),
-            H("keyword.triple_breaker", "Keyword", "Breaks three shields."),
-            H("keyword.power_attacker", "Keyword", "Adds the printed power while attacking."),
-            H("keyword.slayer", "Keyword", "Destroys the opposing creature after battle."),
-            H("keyword.attack_untapped", "Keyword", "Can attack untapped creatures."),
-            H("keyword.must_attack", "Keyword", "Must attack each turn if able."),
-            H("keyword.charger", "Keyword", "Moves a cast spell to mana instead of the graveyard."),
-            H("keyword.stealth", "Keyword", "Becomes unblockable when the opponent has matching mana."),
-            H("keyword.survivor", "Keyword", "Shares Survivor abilities with allied Survivors."),
-            H("keyword.wave_striker", "Keyword", "Enables its Wave Striker text with two other Wave Strikers."),
-            H("keyword.silent_skill", "Keyword", "May stay tapped at turn start to resolve Silent Skill."),
-            H("keyword.turbo_rush", "Keyword", "Enables Turbo Rush after another allied creature breaks a shield."),
-            H("keyword.tap_ability", "Keyword", "May tap instead of attacking to resolve a tap ability."),
-            H("restriction.cannot_attack", "Restriction", "Cannot declare attacks."),
-            H("restriction.cannot_attack_players", "Restriction", "Cannot attack a player."),
-            H("restriction.cannot_attack_creatures", "Restriction", "Cannot attack creatures."),
-            H("restriction.unblockable", "Restriction", "Cannot be blocked."),
-            H("restriction.cannot_be_attacked", "Restriction", "Cannot be selected as an attack target."),
-            H("evolution.single_race", "Evolution", "Evolves from one creature of the printed race."),
-            H("evolution.vortex", "Evolution", "Evolves from two creatures of the printed races."),
-            H("trigger.end_turn_untap_self", "Triggered", "Untaps the source at the end of its owner's turn."),
-            H("trigger.summon_draw", "Triggered", "Draws cards when summoned."),
-            H("trigger.summon_mana_acceleration", "Triggered", "Moves cards from the top of the deck to mana when summoned."),
-            H("spell.draw", "Spell", "Draws the printed number of cards."),
-            H("spell.mana_acceleration", "Spell", "Moves cards from the top of the deck to mana."),
-            H("spell.tap_opponent", "Spell", "Taps selected opposing creatures."),
-            H("spell.tap_all_opponent", "Spell", "Taps all opposing creatures."),
-            H("spell.destroy_opponent", "Spell", "Destroys a selected opposing creature."),
-            H("spell.destroy_power", "Spell", "Destroys an opposing creature at or below a power limit."),
-            H("spell.destroy_untapped", "Spell", "Destroys an untapped opposing creature."),
-            H("trigger.summon_destroy_power", "Triggered", "Destroys an opposing creature at or below a power limit when summoned."),
-            H("move.return_creature_hand", "Move", "Returns a selected creature to its owner's hand."),
-            H("rule.multicivilization_mana_tapped", "Rule", "A multicolored card enters the mana zone tapped.")
-        });
+        public static readonly IReadOnlyList<AbilityHandlerMetadata> Handlers =
+            CreateHandlerStock().AsReadOnly();
 
         public static bool Configure(CardDefinition card, IReadOnlyList<PrintedRuleLine> lines)
         {
@@ -97,12 +61,112 @@ namespace CardGame.Core
             card.RuleLineIds = lines.Select(line => line.Id).ToArray();
             var complete = true;
             foreach (var line in lines)
-                if (!Apply(card, line)) complete = false;
+            {
+                var isSurvivorAbility = card.HasKeyword(CardKeyword.Survivor) &&
+                    !Starts(line.Text.Trim().TrimStart('■').Trim(), "Survivor");
+                var isWaveStrikerAbility = card.HasKeyword(CardKeyword.WaveStriker) &&
+                    !Starts(line.Text.Trim().TrimStart('■').Trim(), "Wave striker");
+                var isTurboRushAbility = card.HasKeyword(CardKeyword.TurboRush) &&
+                    !Starts(line.Text.Trim().TrimStart('■').Trim(), "Turbo rush");
+                var keywordCount = card.Abilities.Length;
+                var ruleCount = card.RuleAbilities.Length;
+                if (!Apply(card, line))
+                {
+                    complete = false;
+                    continue;
+                }
+                if (isSurvivorAbility)
+                {
+                    foreach (var keyword in card.Abilities.Skip(keywordCount))
+                        keyword.IsSurvivorAbility = true;
+                    foreach (var ability in card.RuleAbilities.Skip(ruleCount))
+                        ability.IsSurvivorAbility = true;
+                }
+                if (isWaveStrikerAbility)
+                    ApplyWaveStrikerCondition(card, line, keywordCount, ruleCount);
+                if (isTurboRushAbility)
+                    ApplyTurboRushCondition(card, line, keywordCount, ruleCount);
+            }
             card.ImplementationStatus = complete ? CardImplementationStatus.Complete :
                 card.Abilities.Length > 0 || card.RuleAbilities.Length > 0
                     ? CardImplementationStatus.CoreKeywords
                     : CardImplementationStatus.DataOnly;
             return complete;
+        }
+
+        private static void ApplyWaveStrikerCondition(CardDefinition card, PrintedRuleLine line,
+            int keywordCount, int ruleCount)
+        {
+            var conditionalKeywords = card.Abilities.Skip(keywordCount).ToArray();
+            if (conditionalKeywords.Length > 0)
+            {
+                card.Abilities = card.Abilities.Take(keywordCount).ToArray();
+                foreach (var keyword in conditionalKeywords)
+                {
+                    var granted = new RuleAbilityDefinition(line.Id, AbilityTiming.Static,
+                        AbilityOperation.GrantKeyword)
+                    {
+                        RulesText = line.Text,
+                        Keyword = keyword.Keyword,
+                        Value = keyword.Value,
+                        Selector = new RuleSelectorDefinition
+                        {
+                            Controller = RuleController.Source,
+                            Zone = RuleZone.BattleZone,
+                            Mode = RuleSelectionMode.SourceCard,
+                            Minimum = 1,
+                            Maximum = 1,
+                            Filter = new CardFilterDefinition { CreaturesOnly = true }
+                        },
+                        Condition = new AbilityConditionDefinition { RequiresWaveStriker = true }
+                    };
+                    card.RuleAbilities = card.RuleAbilities.Concat(new[] { granted }).ToArray();
+                }
+            }
+
+            foreach (var ability in card.RuleAbilities.Skip(ruleCount))
+            {
+                ability.Condition ??= new AbilityConditionDefinition();
+                ability.Condition.RequiresWaveStriker = true;
+            }
+        }
+
+        private static void ApplyTurboRushCondition(CardDefinition card, PrintedRuleLine line,
+            int keywordCount, int ruleCount)
+        {
+            var conditionalKeywords = card.Abilities.Skip(keywordCount).ToArray();
+            if (conditionalKeywords.Length > 0)
+            {
+                card.Abilities = card.Abilities.Take(keywordCount).ToArray();
+                foreach (var keyword in conditionalKeywords)
+                {
+                    var granted = new RuleAbilityDefinition(line.Id, AbilityTiming.Static,
+                        AbilityOperation.GrantKeyword)
+                    {
+                        RulesText = line.Text,
+                        Keyword = keyword.Keyword,
+                        Value = keyword.Value,
+                        Selector = new RuleSelectorDefinition
+                        {
+                            Controller = RuleController.Source,
+                            Zone = RuleZone.BattleZone,
+                            Mode = RuleSelectionMode.SourceCard,
+                            Minimum = 1,
+                            Maximum = 1,
+                            Filter = new CardFilterDefinition { CreaturesOnly = true }
+                        },
+                        Condition = new AbilityConditionDefinition
+                            { AnotherCreatureBrokeShieldThisTurn = true }
+                    };
+                    card.RuleAbilities = card.RuleAbilities.Concat(new[] { granted }).ToArray();
+                }
+            }
+
+            foreach (var ability in card.RuleAbilities.Skip(ruleCount))
+            {
+                ability.Condition ??= new AbilityConditionDefinition();
+                ability.Condition.AnotherCreatureBrokeShieldThisTurn = true;
+            }
         }
 
         public static bool Apply(CardDefinition card, PrintedRuleLine line)
@@ -121,12 +185,53 @@ namespace CardGame.Core
             if (Starts(text, "Wave striker")) return AddKeyword(card, CardKeyword.WaveStriker);
             if (Starts(text, "Silent skill")) return AddKeyword(card, CardKeyword.SilentSkill);
             if (Starts(text, "Turbo rush")) return AddKeyword(card, CardKeyword.TurboRush);
+            var crewBreaker = CrewBreaker.Match(text);
+            if (crewBreaker.Success)
+            {
+                var race = crewBreaker.Groups[1].Value.Trim();
+                card.CrewBreakerRace = race;
+                if (race.Equals("Dragon", StringComparison.OrdinalIgnoreCase))
+                {
+                    card.CrewBreakerRace = string.Empty;
+                    card.CrewBreakerRaceContains = "Dragon";
+                }
+                return AddKeyword(card, CardKeyword.CrewBreaker);
+            }
             if (text.StartsWith("Instead of having this creature attack", StringComparison.OrdinalIgnoreCase))
                 return AddKeyword(card, CardKeyword.TapAbility);
-            if (Regex.IsMatch(text, @"^(Light|Water|Darkness|Fire|Nature) stealth", RegexOptions.IgnoreCase))
+            var stealth = Regex.Match(text, @"^(Light|Water|Darkness|Fire|Nature) stealth", RegexOptions.IgnoreCase);
+            if (stealth.Success)
+            {
+                card.StealthCivilization = ParseCivilization(stealth.Groups[1].Value);
+                card.HasStealthCivilization = true;
                 return AddKeyword(card, CardKeyword.Stealth);
-            if (Regex.IsMatch(text, @"^(?:\w+ and \w+ )?Slayer(?:\s|$)", RegexOptions.IgnoreCase))
-                return AddKeyword(card, CardKeyword.Slayer);
+            }
+            var slayer = Regex.Match(text,
+                @"^(?:(Light|Water|Darkness|Fire|Nature)(?: and (Light|Water|Darkness|Fire|Nature))? )?Slayer(?:\s|$)",
+                RegexOptions.IgnoreCase);
+            if (slayer.Success)
+            {
+                if (!slayer.Groups[1].Success) return AddKeyword(card, CardKeyword.Slayer);
+                var civilizations = slayer.Groups[2].Success
+                    ? new[]
+                    {
+                        ParseCivilization(slayer.Groups[1].Value),
+                        ParseCivilization(slayer.Groups[2].Value)
+                    }
+                    : new[] { ParseCivilization(slayer.Groups[1].Value) };
+                var ability = NewSelectionAbility(line, AbilityTiming.Static,
+                    AbilityOperation.GrantKeyword, RuleController.Source,
+                    RuleZone.BattleZone, RuleSelectionMode.SourceCard,
+                    1, 1, new CardFilterDefinition { CreaturesOnly = true }, false);
+                ability.Keyword = CardKeyword.Slayer;
+                ability.RelatedFilter = new CardFilterDefinition
+                {
+                    CreaturesOnly = true,
+                    Civilizations = civilizations
+                };
+                AppendRule(card, ability);
+                return true;
+            }
             if (text.Equals("This creature can attack untapped creatures.", StringComparison.OrdinalIgnoreCase))
                 return AddKeyword(card, CardKeyword.AttackUntappedCreature);
             if (text.Equals("This creature attacks each turn if able.", StringComparison.OrdinalIgnoreCase))
@@ -141,6 +246,12 @@ namespace CardGame.Core
                 return AddKeyword(card, CardKeyword.Unblockable);
             if (text.Equals("This creature can't be attacked.", StringComparison.OrdinalIgnoreCase))
                 return AddKeyword(card, CardKeyword.CannotBeAttacked);
+            if (text.Equals("You can put an evolution creature of any race on this creature.",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                card.CanBeAnyEvolutionBase = true;
+                return true;
+            }
 
             var match = PowerAttacker.Match(text);
             if (match.Success) return AddKeyword(card, CardKeyword.PowerAttacker, int.Parse(match.Groups[1].Value));
@@ -159,9 +270,11 @@ namespace CardGame.Core
             match = SingleEvolution.Match(text);
             if (match.Success)
             {
-                card.EvolutionRace = SingularRace(match.Groups[1].Value);
-                card.EvolutionRaces = new[] { card.EvolutionRace };
-                card.EvolutionRequirements = new[] { EvolutionRequirement(match.Groups[1].Value) };
+                var requirement = EvolutionRequirement(match.Groups[1].Value);
+                card.EvolutionRequirements = new[] { requirement };
+                card.EvolutionRaces = requirement.Races.ToArray();
+                card.EvolutionRace = card.EvolutionRaces.FirstOrDefault() ??
+                    string.Empty;
                 return true;
             }
             if (text.Equals("At the end of each of your turns, you may untap this creature.", StringComparison.OrdinalIgnoreCase) ||
@@ -233,7 +346,9 @@ namespace CardGame.Core
             {
                 RulesText = line.Text,
                 Amount = amount,
-                Optional = optional || timing == AbilityTiming.SilentSkill
+                Optional = optional || timing == AbilityTiming.SilentSkill,
+                ChooseAmount = operation == AbilityOperation.Draw &&
+                    line.Text.IndexOf("up to", StringComparison.OrdinalIgnoreCase) >= 0
             };
             card.RuleAbilities = card.RuleAbilities.Concat(new[] { ability }).ToArray();
             return true;

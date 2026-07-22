@@ -43,10 +43,9 @@ namespace CardGame.Core.Tests
                 Is.EqualTo(AbilityRegistry.Handlers.Count));
         }
 
-        // This is the final zero-gap release gate. It is intentionally explicit
-        // during iterative implementation batches; remove Explicit only when the
-        // ability ledger reports zero unmapped rules lines.
-        [Test, Explicit("Enable as the final gate after every TCG rules line is mapped.")]
+        // Final zero-gap release gate. This must run in every normal test pass so
+        // a newly imported or accidentally unmapped rules line cannot ship.
+        [Test]
         public void Catalog_AllCardRulesAreComplete()
         {
             Assert.That(TcgCatalog.Unfinished, Is.Empty);

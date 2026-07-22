@@ -242,7 +242,42 @@ namespace CardGame.Core
             SetEffects(cards, "dm01-063", CardImplementationStatus.Complete,
                 new SpellEffectDefinition(SpellEffectKind.DestroyOpponentCreature));
 
+            ReplaceWithCanonicalPrintings(cards);
             return cards;
+        }
+
+        private static void ReplaceWithCanonicalPrintings(
+            IDictionary<string, CardDefinition> cards)
+        {
+            // Keep the original starter-deck keys so existing deck recipes and
+            // saved references remain valid, but run the match with the same
+            // canonical definitions used by the complete TCG catalog. This
+            // prevents this early prototype catalog from drifting away from the
+            // executable AbilityRegistry mappings.
+            var keys = new List<string>(cards.Keys);
+            foreach (var key in keys)
+            {
+                var legacy = cards[key];
+                CardDefinition canonical = null;
+                foreach (var printing in TcgCatalog.Printings)
+                {
+                    if (!printing.SetCode.Equals(legacy.SetCode,
+                            StringComparison.OrdinalIgnoreCase) ||
+                        !printing.CollectorNumber.Equals(legacy.CollectorNumber,
+                            StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    canonical = printing;
+                    break;
+                }
+
+                if (canonical == null)
+                    throw new InvalidOperationException(
+                        $"No canonical TCG printing exists for starter card {legacy.Name} " +
+                        $"({legacy.SetCode} {legacy.CollectorNumber}).");
+
+                cards[key] = canonical;
+            }
         }
 
         private static DeckEntry E(string id, int count) => new DeckEntry(id, count);

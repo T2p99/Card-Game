@@ -21,6 +21,13 @@ MANIFEST_DIR = ROOT / "Assets/Resources/CardGame/Data/Tcg"
 ART_DIR = ROOT / "Assets/Resources/CardGame/CardArt"
 VIDEO_DIR = ROOT / "Assets/Resources/CardGame/Videos"
 USER_AGENT = "Card-Game licensed media importer/1.0"
+REQUIRED_MANIFEST_COLUMNS = {
+    "card_id",
+    "media_id",
+    "card_set",
+    "image_url",
+    "video_url",
+}
 
 
 class ImportResult(NamedTuple):
@@ -38,9 +45,13 @@ def request(url: str, method: str = "GET", timeout: int = 30):
 def download(url: str, destination: Path) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
     temporary = destination.with_suffix(destination.suffix + ".part")
-    with request(url) as response, temporary.open("wb") as output:
-        shutil.copyfileobj(response, output)
-    temporary.replace(destination)
+    try:
+        with request(url) as response, temporary.open("wb") as output:
+            shutil.copyfileobj(response, output)
+        temporary.replace(destination)
+    except Exception:
+        temporary.unlink(missing_ok=True)
+        raise
 
 
 def convert_webp(source: Path, destination: Path) -> None:
@@ -86,15 +97,24 @@ def import_video(card: dict[str, str]) -> ImportResult:
     if destination.exists() and destination.stat().st_size > 0:
         return ImportResult("present", f"video {media_id:04d} already present")
     try:
-        with request(card["video_url"], method="HEAD", timeout=15) as response:
-            if response.status != 200:
-                return ImportResult("not_provided", f"video {media_id:04d} not provided by database (skipped)")
         download(card["video_url"], destination)
         return ImportResult("imported", f"video {media_id:04d} imported")
     except urllib.error.HTTPError as error:
         if error.code == 404:
             return ImportResult("not_provided", f"video {media_id:04d} not provided by database (skipped)")
         raise
+
+
+def load_card_manifests() -> list[dict[str, str]]:
+    cards: list[dict[str, str]] = []
+    for manifest in sorted(MANIFEST_DIR.glob("*.csv")):
+        with manifest.open(encoding="utf-8-sig", newline="") as source:
+            reader = csv.DictReader(source)
+            columns = set(reader.fieldnames or [])
+            if not REQUIRED_MANIFEST_COLUMNS.issubset(columns):
+                continue
+            cards.extend(reader)
+    return cards
 
 
 def main() -> int:
@@ -108,10 +128,7 @@ def main() -> int:
     if not (args.images or args.videos or args.all):
         parser.error("choose --images, --videos, or --all")
 
-    cards = []
-    for manifest in sorted(MANIFEST_DIR.glob("*.csv")):
-        with manifest.open(encoding="utf-8-sig", newline="") as source:
-            cards.extend(csv.DictReader(source))
+    cards = load_card_manifests()
     if args.sets:
         selected = {value.upper() for value in args.sets}
         cards = [card for card in cards if card["card_set"].upper() in selected]

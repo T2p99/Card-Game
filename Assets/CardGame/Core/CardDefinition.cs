@@ -50,7 +50,9 @@ namespace CardGame.Core
         CrewBreaker,
         BlockIfAble,
         AttackableWhileUntapped,
-        UnblockableByPowerAtMost
+        UnblockableByPowerAtMost,
+        IgnoreAttackRestrictionsAgainstPlayer,
+        UnblockableWhenAttackingCreature
     }
 
     public enum CardImplementationStatus
@@ -111,6 +113,7 @@ namespace CardGame.Core
     {
         public CardKeyword Keyword;
         public int Value;
+        public bool IsSurvivorAbility;
 
         public KeywordAbility(CardKeyword keyword, int value = 0)
         {
@@ -139,6 +142,11 @@ namespace CardGame.Core
         public string[] EvolutionRaces = Array.Empty<string>();
         public EvolutionBaseRequirement[] EvolutionRequirements = Array.Empty<EvolutionBaseRequirement>();
         public bool IsVortexEvolution;
+        public bool CanBeAnyEvolutionBase;
+        public string CrewBreakerRace = string.Empty;
+        public string CrewBreakerRaceContains = string.Empty;
+        public Civilization StealthCivilization;
+        public bool HasStealthCivilization;
         public int Power;
         public KeywordAbility[] Abilities = Array.Empty<KeywordAbility>();
         public RuleAbilityDefinition[] RuleAbilities = Array.Empty<RuleAbilityDefinition>();

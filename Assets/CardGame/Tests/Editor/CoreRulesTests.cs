@@ -18,6 +18,29 @@ namespace CardGame.Core.Tests
         }
 
         [Test]
+        public void StartGame_RejectsDeckWithFewerThanFortyCards()
+        {
+            var undersized = Deck("P1");
+            undersized.RemoveAt(undersized.Count - 1);
+
+            Assert.That(() => new RulesEngine().StartGame(
+                undersized, Deck("P2"), seed: 42, startingPlayerId: 0),
+                Throws.ArgumentException.With.Message.Contains("at least 40"));
+        }
+
+        [Test]
+        public void StartGame_AcceptsEnglishDeckWithMoreThanFortyCards()
+        {
+            var oversized = Deck("P1");
+            oversized.Add(Creature("extra", "Extra", Civilization.Fire, 1, 1000));
+
+            var state = new RulesEngine().StartGame(
+                oversized, Deck("P2"), seed: 42, startingPlayerId: 0);
+
+            Assert.That(state.Players[0].Deck.Count, Is.EqualTo(31));
+        }
+
+        [Test]
         public void ChargeMana_IsLimitedToOncePerTurn()
         {
             var engine = new RulesEngine();
@@ -30,6 +53,27 @@ namespace CardGame.Core.Tests
 
             Assert.That(result.Success, Is.False);
             Assert.That(result.Error, Does.Contain("one mana charge"));
+        }
+
+        [Test]
+        public void ChargeMana_CannotBeTakenAfterMainStepBegins()
+        {
+            var engine = new RulesEngine();
+            var state = NewGame(engine);
+            var summon = Instance(900, Creature("summon", "Summon",
+                Civilization.Fire, 1, 1000));
+            var mana = Instance(901, Creature("mana", "Mana",
+                Civilization.Fire, 1, 1000));
+            state.ActivePlayer.Hand.Add(summon);
+            state.ActivePlayer.Mana.Add(mana);
+
+            Assert.That(engine.SummonCreature(state, 0, summon.InstanceId,
+                new[] { mana.InstanceId }).Success, Is.True);
+
+            var result = engine.ChargeMana(state, 0,
+                state.ActivePlayer.Hand[0].InstanceId);
+            Assert.That(result.Success, Is.False);
+            Assert.That(result.Error, Does.Contain("charge step"));
         }
 
         [Test]
@@ -61,6 +105,26 @@ namespace CardGame.Core.Tests
 
             Assert.That(result.Success, Is.False);
             Assert.That(result.Error, Does.Contain("summoning sickness"));
+        }
+
+        [Test]
+        public void SummoningSickCreature_CannotUseTapAbility()
+        {
+            var engine = new RulesEngine();
+            var state = NewGame(engine);
+            var definition = Creature("tap-creature", "Tap Creature",
+                Civilization.Light, 2, 2000);
+            definition.Abilities = new[] { new KeywordAbility(CardKeyword.TapAbility) };
+            var creature = Instance(900, definition);
+            creature.EnteredBattleZoneOnTurn = state.TurnNumber;
+            state.ActivePlayer.BattleZone.Add(creature);
+
+            var result = engine.UseTapAbility(state, 0, creature.InstanceId);
+
+            Assert.That(result.Success, Is.False);
+            Assert.That(result.Error, Does.Contain("summoning sickness"));
+            Assert.That(creature.Tapped, Is.False);
+            Assert.That(state.Phase, Is.EqualTo(GamePhase.Main));
         }
 
         [Test]
@@ -152,6 +216,24 @@ namespace CardGame.Core.Tests
             var result = engine.EndTurn(state, 0);
 
             Assert.That(result.Success, Is.True);
+        }
+
+        [Test]
+        public void DrawingLastDeckCard_LosesImmediately()
+        {
+            var engine = new RulesEngine();
+            var state = NewGame(engine);
+            state.Players[1].Deck.Clear();
+            state.Players[1].Deck.Add(Instance(900,
+                Creature("last-card", "Last Card", Civilization.Water, 1, 1000)));
+
+            var result = engine.EndTurn(state, 0);
+
+            Assert.That(result.Success, Is.True);
+            Assert.That(state.WinnerPlayerId, Is.EqualTo(0));
+            Assert.That(state.WinReason, Is.EqualTo("Deck out"));
+            Assert.That(state.Players[1].Hand.Any(card =>
+                card.Definition.Id == "last-card"), Is.True);
         }
 
         [Test]
