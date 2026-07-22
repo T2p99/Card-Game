@@ -16,6 +16,24 @@ namespace CardGame.Core.Tests
         }
 
         [Test]
+        public void SelfDestructionReplacement_PreservesOptionalAndMandatoryWording()
+        {
+            var aquaAgent = TcgCatalog.ById["dm07-16-55"].RuleAbilities.Single(rule =>
+                rule.Timing == AbilityTiming.ReplacementDestroy &&
+                rule.Operation == AbilityOperation.Move);
+            var dreamPirate = TcgCatalog.ById["dm07-26-55"].RuleAbilities.Single(rule =>
+                rule.Timing == AbilityTiming.ReplacementDestroy &&
+                rule.Operation == AbilityOperation.Move);
+            var aless = TcgCatalog.ById["dm03-2-55"].RuleAbilities.Single(rule =>
+                rule.Timing == AbilityTiming.ReplacementDestroy &&
+                rule.Operation == AbilityOperation.Move);
+
+            Assert.That(aquaAgent.Optional, Is.True, "Aqua Agent says 'you may'.");
+            Assert.That(dreamPirate.Optional, Is.True, "Dream Pirate says 'you may'.");
+            Assert.That(aless.Optional, Is.False, "Aless has a mandatory replacement.");
+        }
+
+        [Test]
         public void ApocalypseVise_DestroysAChosenGroupWithinTheTotalPowerBudget()
         {
             var state = EmptyState();

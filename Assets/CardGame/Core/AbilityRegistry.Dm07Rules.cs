@@ -168,12 +168,12 @@ namespace CardGame.Core
 
             if (text.Equals("When this creature would be destroyed, you may return it to your hand instead.",
                     StringComparison.OrdinalIgnoreCase))
-                return AddSelfDestructionReplacement(card, line, RuleZone.Hand, false);
+                return AddSelfDestructionReplacement(card, line, RuleZone.Hand, true);
 
             if (text.Equals("When this creature would be destroyed, you may return it to your hand instead. If you do, put a card from your hand into your graveyard.",
                     StringComparison.OrdinalIgnoreCase))
             {
-                AddSelfDestructionReplacement(card, line, RuleZone.Hand, false);
+                AddSelfDestructionReplacement(card, line, RuleZone.Hand, true);
                 var discard = NewSelectionAbility(line, AbilityTiming.ReplacementDestroy,
                     AbilityOperation.Discard, RuleController.Source, RuleZone.Hand,
                     RuleSelectionMode.Choose, 1, 1, new CardFilterDefinition(), false);
@@ -293,19 +293,6 @@ namespace CardGame.Core
             }
 
             return false;
-        }
-
-        private static bool AddSelfDestructionReplacement(CardDefinition card, PrintedRuleLine line,
-            RuleZone destination, bool mandatory)
-        {
-            AppendRule(card, new RuleAbilityDefinition(line.Id, AbilityTiming.ReplacementDestroy,
-                AbilityOperation.Move)
-            {
-                RulesText = line.Text,
-                Optional = !mandatory,
-                Destination = destination
-            });
-            return true;
         }
 
         private static AbilityConditionDefinition NoShieldsCondition() => new AbilityConditionDefinition
