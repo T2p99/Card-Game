@@ -2195,13 +2195,13 @@ namespace CardGame.Core
                     var mana = ChooseCardsSafely(state, targetPlayerId, source, ability,
                         availableMana, 0, availableMana.Length);
                     foreach (var card in mana) card.Tapped = true;
-                    var maximumCreatures = mana.Length / 2;
+                    var maximumCreatures = mana.Count / 2;
                     var tappedCreatures = targetPlayer.BattleZone.Where(card =>
                         card.Definition.IsCreature && card.Tapped).ToArray();
                     var creatures = ChooseCardsSafely(state, targetPlayerId, source, ability,
                         tappedCreatures, 0, Math.Min(maximumCreatures, tappedCreatures.Length));
                     foreach (var creature in creatures) creature.Tapped = false;
-                    return mana.Length + creatures.Length;
+                    return mana.Count + creatures.Count;
                 }
                 case AbilityOperation.EachPlayerDrawPerMatchingCard:
                 {
@@ -2267,9 +2267,10 @@ namespace CardGame.Core
                 {
                     var lead = Math.Max(0, opponent.BattleZone.Count(card => card.Definition.IsCreature) -
                         owner.BattleZone.Count(card => card.Definition.IsCreature));
-                    var candidates = owner.Deck.Where(card => card.Definition.IsCreature).ToArray();
+                    var deckCreatureCandidates = owner.Deck.Where(card =>
+                        card.Definition.IsCreature).ToArray();
                     var chosen = ChooseCardsSafely(state, ownerId, source, ability,
-                        candidates, 0, Math.Min(lead, candidates.Length));
+                        deckCreatureCandidates, 0, Math.Min(lead, deckCreatureCandidates.Length));
                     state.InspectionPlayerId = opponent.PlayerId;
                     state.InspectedCards.Clear();
                     state.InspectedCards.AddRange(chosen);
@@ -2278,24 +2279,25 @@ namespace CardGame.Core
                         MoveCard(state, selectedCard, RuleZone.Hand, false, true, ownerId);
                         if (state.IsFinished) break;
                     }
-                    if (state.IsFinished) return Math.Max(1, chosen.Length);
+                    if (state.IsFinished) return Math.Max(1, chosen.Count);
                     Shuffle(owner.Deck, state, ownerId);
-                    return Math.Max(1, chosen.Length);
+                    return Math.Max(1, chosen.Count);
                 }
                 case AbilityOperation.SearchSameNameAsEventToBattle:
                 {
                     var eventCard = state.CurrentEventCard;
                     if (eventCard == null || !eventCard.Definition.IsCreature) return 0;
-                    var candidates = owner.Deck.Where(card => card.Definition.IsCreature &&
+                    var matchingDeckCandidates = owner.Deck.Where(card =>
+                        card.Definition.IsCreature &&
                         card.Definition.Name.Equals(eventCard.Definition.Name,
                             StringComparison.OrdinalIgnoreCase)).ToArray();
                     var chosen = ChooseCardsSafely(state, ownerId, source, ability,
-                        candidates, 0, Math.Min(1, candidates.Length));
+                        matchingDeckCandidates, 0, Math.Min(1, matchingDeckCandidates.Length));
                     foreach (var selectedCard in chosen)
                         MoveCard(state, selectedCard, RuleZone.BattleZone, false, true, ownerId);
-                    if (state.IsFinished) return Math.Max(1, chosen.Length);
+                    if (state.IsFinished) return Math.Max(1, chosen.Count);
                     Shuffle(owner.Deck, state, ownerId);
-                    return Math.Max(1, chosen.Length);
+                    return Math.Max(1, chosen.Count);
                 }
                 case AbilityOperation.SearchPlayerDeckToGraveyard:
                 {
