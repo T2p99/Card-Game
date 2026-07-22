@@ -2552,15 +2552,13 @@ namespace CardGame.Core
                 case AbilityOperation.Destroy:
                 case AbilityOperation.DestroyOrSource:
                     appliedCount = ApplyDestructionEvent(state, selected).Count(outcome =>
-                        outcome == DestructionOutcome.Destroyed ||
-                        outcome == DestructionOutcome.Replaced);
+                        outcome == DestructionOutcome.Destroyed);
                     break;
                 case AbilityOperation.DestroyIfCombinedPowerBelowSource:
                     appliedCount = 0;
                     if (selected.Sum(card => CurrentPower(state, card)) < CurrentPower(state, source))
                         appliedCount = ApplyDestructionEvent(state, selected).Count(outcome =>
-                            outcome == DestructionOutcome.Destroyed ||
-                            outcome == DestructionOutcome.Replaced);
+                            outcome == DestructionOutcome.Destroyed);
                     break;
                 case AbilityOperation.SplitPairOpponentChoice:
                 {

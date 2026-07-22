@@ -958,7 +958,7 @@ namespace CardGame.Core.Tests
         }
 
         [Test]
-        public void IfYouDestroyFollowup_ResolvesWhenDestructionCostIsReplaced()
+        public void IfYouDestroyFollowup_DoesNotResolveWhenDestructionIsReplaced()
         {
             var state = EmptyState();
             var sourceDefinition = Spell("conditional-replaced-destruction");
@@ -1004,8 +1004,9 @@ namespace CardGame.Core.Tests
             new AbilityResolver().Resolve(state, source, AbilityTiming.OnCast);
 
             Assert.That(state.Players[1].Hand, Does.Contain(victim));
-            Assert.That(state.Players[0].Hand, Does.Contain(drawn),
-                "Replacing the destruction still pays an 'if you do' destruction cost.");
+            Assert.That(state.Players[0].Hand, Is.Empty,
+                "A replacement means the destruction did not occur, so the 'if you do' followup must not resolve.");
+            Assert.That(state.Players[0].Deck, Does.Contain(drawn));
         }
 
         [Test]
