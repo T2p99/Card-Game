@@ -13,9 +13,19 @@ namespace CardGame.Presentation
     {
         private const int HumanId = 0;
         private const int ComputerId = 1;
+        private static readonly string[] SelectableSetCodes =
+        {
+            "DM-01", "DM-02", "DM-03", "DM-04", "DM-05", "DM-06",
+            "DM-07", "DM-08", "DM-09", "DM-10", "DM-11", "DM-12", "PROMO"
+        };
+
         private readonly Dictionary<string, Texture2D> _cardArt = new Dictionary<string, Texture2D>();
         private readonly HashSet<string> _artRequests = new HashSet<string>();
         private readonly HashSet<long> _selectedManaIds = new HashSet<long>();
+        private readonly HashSet<string> _humanSelectedSets =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "DM-01" };
+        private readonly HashSet<string> _computerSelectedSets =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "DM-01" };
         private long _selectedEvolutionBaseId;
         private Texture2D _cardBack;
 
@@ -40,11 +50,15 @@ namespace CardGame.Presentation
         private bool _animationsEnabled = true;
         private bool _showHandCardViewer;
         private bool _selectingManaPayment;
+        private bool _showDeckSetup = true;
         private VideoPlayer _videoPlayer;
         private RenderTexture _videoTexture;
         private float _uiWidth;
         private float _uiHeight;
         private int _matchSeed;
+        private string _setupMessage = "Choose one or more sets for each deck pool.";
+        private string _humanDeckLabel = "DM-01";
+        private string _computerDeckLabel = "DM-01";
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Bootstrap()
@@ -68,16 +82,7 @@ namespace CardGame.Presentation
                     _cardBack.LoadImage(Convert.FromBase64String(encodedCardBack.text));
                 }
             }
-            _engine = new RulesEngine();
-            _matchSeed = unchecked(Environment.TickCount * 397 ^ Guid.NewGuid().GetHashCode());
-            _state = _engine.StartGame(
-                StarterDeckCatalog.ShobusFireDeck.Build(StarterDeckCatalog.Cards),
-                StarterDeckCatalog.KokujosDarknessDeck.Build(StarterDeckCatalog.Cards),
-                seed: _matchSeed,
-                startingPlayerId: HumanId);
-
             CreateVideoPlayer();
-            StartCoroutine(PreloadStarterArt());
         }
 
         private void CreateVideoPlayer()
@@ -97,9 +102,10 @@ namespace CardGame.Presentation
             };
         }
 
-        private IEnumerator PreloadStarterArt()
+        private IEnumerator PreloadDeckArt(IEnumerable<CardDefinition> deckCards)
         {
-            foreach (var card in StarterDeckCatalog.Cards.Values)
+            foreach (var card in deckCards.GroupBy(item => item.Id, StringComparer.OrdinalIgnoreCase)
+                         .Select(group => group.First()))
             {
                 var localArt = Resources.Load<Texture2D>($"CardGame/CardArt/{card.DatabaseMediaId:0000}");
                 if (localArt != null)
@@ -122,8 +128,6 @@ namespace CardGame.Presentation
 
         private void OnGUI()
         {
-            if (_state == null) return;
-
             const float referenceWidth = 1600f;
             const float referenceHeight = 900f;
             var uiScale = Mathf.Max(0.5f, Mathf.Min(Screen.width / referenceWidth, Screen.height / referenceHeight));
@@ -138,6 +142,13 @@ namespace CardGame.Presentation
 
             GUI.backgroundColor = new Color(0.10f, 0.13f, 0.17f);
             GUI.Box(new Rect(0, 0, _uiWidth, _uiHeight), GUIContent.none);
+            if (_showDeckSetup || _state == null)
+            {
+                DrawDeckSetup();
+                GUI.matrix = previousMatrix;
+                return;
+            }
+
             DrawHeader();
             DrawBoard();
             DrawControlPanel();
@@ -146,6 +157,197 @@ namespace CardGame.Presentation
             if (_showVideo) DrawVideoOverlay();
             if (_state.IsFinished) DrawWinnerOverlay();
             GUI.matrix = previousMatrix;
+        }
+
+        private void DrawDeckSetup()
+        {
+            var panelWidth = Mathf.Min(1320f, _uiWidth - 70f);
+            var panelHeight = Mathf.Min(780f, _uiHeight - 60f);
+            var panel = new Rect((_uiWidth - panelWidth) * 0.5f, (_uiHeight - panelHeight) * 0.5f,
+                panelWidth, panelHeight);
+            GUI.backgroundColor = new Color(0.16f, 0.19f, 0.24f);
+            GUI.Box(panel, GUIContent.none);
+
+            var titleStyle = new GUIStyle(GUI.skin.label)
+            {
+                alignment = TextAnchor.MiddleCenter,
+                fontSize = 32,
+                fontStyle = FontStyle.Bold
+            };
+            var subtitleStyle = new GUIStyle(GUI.skin.label)
+            {
+                alignment = TextAnchor.MiddleCenter,
+                fontSize = 17,
+                wordWrap = true
+            };
+            GUI.color = Color.white;
+            GUI.Label(new Rect(panel.x + 30f, panel.y + 20f, panel.width - 60f, 48f),
+                "CHOOSE CARD-SET POOLS", titleStyle);
+            GUI.Label(new Rect(panel.x + 70f, panel.y + 68f, panel.width - 140f, 50f),
+                "Each side receives an independently generated legal 40-card deck, then the engine shuffles it before dealing shields and hands. Maximum four copies per card name.",
+                subtitleStyle);
+
+            var gap = 30f;
+            var selectorWidth = (panel.width - 90f - gap) * 0.5f;
+            var selectorHeight = panel.height - 260f;
+            DrawSetPoolSelector(new Rect(panel.x + 45f, panel.y + 126f, selectorWidth, selectorHeight),
+                "YOUR DECK POOL", _humanSelectedSets);
+            DrawSetPoolSelector(new Rect(panel.x + 45f + selectorWidth + gap, panel.y + 126f,
+                    selectorWidth, selectorHeight),
+                "COMPUTER DECK POOL", _computerSelectedSets);
+
+            var humanReady = CanBuildDeckFromSets(_humanSelectedSets);
+            var computerReady = CanBuildDeckFromSets(_computerSelectedSets);
+            var messageStyle = new GUIStyle(subtitleStyle)
+            {
+                alignment = TextAnchor.MiddleLeft
+            };
+            messageStyle.normal.textColor = humanReady && computerReady
+                ? new Color(0.70f, 0.90f, 0.72f)
+                : new Color(1f, 0.70f, 0.30f);
+            GUI.Label(new Rect(panel.x + 48f, panel.yMax - 116f, panel.width - 430f, 64f),
+                _setupMessage, messageStyle);
+
+            GUI.enabled = humanReady && computerReady;
+            if (GUI.Button(new Rect(panel.xMax - 350f, panel.yMax - 108f, 300f, 62f), "BUILD DECKS & START DUEL"))
+                StartSelectedMatch();
+            GUI.enabled = true;
+        }
+
+        private static void DrawSetPoolSelector(Rect area, string title, HashSet<string> selectedSets)
+        {
+            GUI.backgroundColor = new Color(0.10f, 0.13f, 0.17f);
+            GUI.Box(area, GUIContent.none);
+            var headerStyle = new GUIStyle(GUI.skin.label)
+            {
+                alignment = TextAnchor.MiddleCenter,
+                fontSize = 21,
+                fontStyle = FontStyle.Bold
+            };
+            GUI.Label(new Rect(area.x + 10f, area.y + 10f, area.width - 20f, 34f), title, headerStyle);
+
+            const int columns = 3;
+            const float rowHeight = 48f;
+            var cellWidth = (area.width - 36f) / columns;
+            for (var i = 0; i < SelectableSetCodes.Length; i++)
+            {
+                var setCode = SelectableSetCodes[i];
+                var column = i % columns;
+                var row = i / columns;
+                var wasSelected = selectedSets.Contains(setCode);
+                var cardCount = TcgCatalog.ForSet(setCode)
+                    .Count(card => card.ImplementationStatus == CardImplementationStatus.Complete);
+                var isSelected = GUI.Toggle(
+                    new Rect(area.x + 14f + column * cellWidth, area.y + 56f + row * rowHeight,
+                        cellWidth - 8f, 38f),
+                    wasSelected, $" {setCode}  ({cardCount})");
+                if (isSelected != wasSelected)
+                {
+                    if (isSelected) selectedSets.Add(setCode);
+                    else selectedSets.Remove(setCode);
+                }
+            }
+
+            var selectedCards = TcgCatalog.Printings.Count(card =>
+                selectedSets.Contains(card.SetCode) &&
+                card.ImplementationStatus == CardImplementationStatus.Complete);
+            var uniqueNames = TcgCatalog.Printings.Where(card =>
+                    selectedSets.Contains(card.SetCode) &&
+                    card.ImplementationStatus == CardImplementationStatus.Complete)
+                .Select(card => card.Name)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Count();
+            var controlsY = area.yMax - 82f;
+            if (GUI.Button(new Rect(area.x + 14f, controlsY, 128f, 38f), "Select All"))
+                foreach (var setCode in SelectableSetCodes) selectedSets.Add(setCode);
+            if (GUI.Button(new Rect(area.x + 150f, controlsY, 100f, 38f), "Clear"))
+                selectedSets.Clear();
+            GUI.Label(new Rect(area.x + 268f, controlsY - 2f, area.width - 280f, 46f),
+                $"{selectedSets.Count} set(s)\n{selectedCards} printings • {uniqueNames} card names");
+        }
+
+        private static bool CanBuildDeckFromSets(HashSet<string> selectedSets)
+        {
+            if (selectedSets.Count == 0) return false;
+            var uniqueNames = TcgCatalog.Printings.Where(card =>
+                    selectedSets.Contains(card.SetCode) &&
+                    card.ImplementationStatus == CardImplementationStatus.Complete)
+                .Select(card => card.Name)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Count();
+            return uniqueNames >= 10;
+        }
+
+        private void StartSelectedMatch()
+        {
+            try
+            {
+                StopAllCoroutines();
+                EndVideo();
+                _matchSeed = unchecked(Environment.TickCount * 397 ^ Guid.NewGuid().GetHashCode());
+                var humanSets = OrderedSelectedSets(_humanSelectedSets);
+                var computerSets = OrderedSelectedSets(_computerSelectedSets);
+                var humanDeck = TcgCatalog.BuildRandomDeckFromSets(
+                    humanSets, unchecked(_matchSeed ^ 0x5f3759df));
+                var computerDeck = TcgCatalog.BuildRandomDeckFromSets(
+                    computerSets, unchecked(_matchSeed ^ (int)0x9e3779b9));
+
+                _engine = new RulesEngine();
+                _state = _engine.StartGame(humanDeck, computerDeck, _matchSeed, HumanId);
+                _humanDeckLabel = FormatSetSelection(humanSets);
+                _computerDeckLabel = FormatSetSelection(computerSets);
+                _message = "Choose a card, charge mana, and play a card.";
+                _setupMessage = "Choose one or more sets for each deck pool.";
+                _busy = false;
+                _awaitingHumanBlock = false;
+                _showDeckSetup = false;
+                _selectedHand = null;
+                _selectedCreature = null;
+                _selectedOpponentCreature = null;
+                _viewerCards = null;
+                _showHandCardViewer = false;
+                _selectingManaPayment = false;
+                _selectedManaIds.Clear();
+                _selectedEvolutionBaseId = 0;
+                _handScroll = Vector2.zero;
+                _humanBattleScroll = Vector2.zero;
+                _computerBattleScroll = Vector2.zero;
+                _manaSelectionScroll = Vector2.zero;
+                _battleActionScroll = Vector2.zero;
+                _artRequests.Clear();
+                StartCoroutine(PreloadDeckArt(humanDeck.Concat(computerDeck).ToArray()));
+            }
+            catch (Exception exception)
+            {
+                _state = null;
+                _showDeckSetup = true;
+                _setupMessage = exception.Message;
+            }
+        }
+
+        private static string[] OrderedSelectedSets(HashSet<string> selectedSets) =>
+            SelectableSetCodes.Where(selectedSets.Contains).ToArray();
+
+        private static string FormatSetSelection(IReadOnlyCollection<string> sets)
+        {
+            if (sets.Count == SelectableSetCodes.Length) return "All TCG sets";
+            return sets.Count <= 4 ? string.Join(", ", sets) : $"{sets.Count} selected sets";
+        }
+
+        private void ReturnToDeckSetup()
+        {
+            StopAllCoroutines();
+            EndVideo();
+            _state = null;
+            _busy = false;
+            _awaitingHumanBlock = false;
+            _showHandCardViewer = false;
+            _viewerCards = null;
+            _selectedHand = null;
+            _selectedCreature = null;
+            _selectedOpponentCreature = null;
+            _showDeckSetup = true;
+            _setupMessage = "Change either pool, then build two newly randomized decks.";
         }
 
         private void DrawHeader()
@@ -171,7 +373,8 @@ namespace CardGame.Presentation
             var battleHeight = Mathf.Max(88f, (_uiHeight - fixedHeight) / 2f);
             var y = 50f;
 
-            DrawPlayerSummary(_state.Players[ComputerId], new Rect(12, y, boardWidth - 24, 32), "COMPUTER — Kokujo's Darkness Deck");
+            DrawPlayerSummary(_state.Players[ComputerId], new Rect(12, y, boardWidth - 24, 32),
+                $"COMPUTER — {_computerDeckLabel} pool");
             y += 36f;
             DrawDeckShieldsAndHiddenHand(_state.Players[ComputerId], new Rect(12, y, boardWidth - 24, hiddenZoneHeight), true);
             y += hiddenZoneHeight + 6f;
@@ -397,6 +600,8 @@ namespace CardGame.Presentation
             GUI.Box(rect, GUIContent.none);
             GUILayout.BeginArea(new Rect(rect.x + 10, rect.y + 10, rect.width - 20, rect.height - 20));
             GUILayout.Label("DUEL CONTROLS");
+            GUILayout.Label($"Your pool: {_humanDeckLabel}");
+            GUILayout.Label($"Computer pool: {_computerDeckLabel}");
             GUILayout.Space(6);
 
             var selected = _selectedHand ?? _selectedCreature ?? _selectedOpponentCreature;
@@ -844,6 +1049,15 @@ namespace CardGame.Presentation
                 return false;
             }
 
+            if (_state.PendingAttack == null)
+            {
+                ShowResult(result, $"{attacker.Definition.Name}'s attack ended during its attack abilities.");
+                ResolveComputerShieldTriggers();
+                _selectedCreature = null;
+                _selectedOpponentCreature = null;
+                return true;
+            }
+
             _busy = true;
             StartCoroutine(ResolveHumanAttack(attacker));
             return true;
@@ -897,6 +1111,13 @@ namespace CardGame.Presentation
                 if (_state.IsFinished) break;
                 var attack = _engine.DeclareAttack(_state, ComputerId, attacker.InstanceId, AttackTargetKind.Player);
                 if (!attack.Success) continue;
+
+                if (_state.PendingAttack == null)
+                {
+                    _message = $"{attacker.Definition.Name}'s attack ended during its attack abilities.";
+                    while (_state.PendingShieldTriggers.Count > 0) yield return null;
+                    continue;
+                }
 
                 _message = $"{attacker.Definition.Name} attacks you!";
                 yield return PlayAttackVideo(attacker);
@@ -1014,8 +1235,23 @@ namespace CardGame.Presentation
             GUI.Box(new Rect(0, 0, _uiWidth, _uiHeight), GUIContent.none);
             GUI.color = Color.white;
             var text = _state.WinnerPlayerId == HumanId ? "YOU WIN" : "COMPUTER WINS";
-            GUI.Label(new Rect(_uiWidth / 2f - 150, _uiHeight / 2f - 45, 300, 40), text);
-            GUI.Label(new Rect(_uiWidth / 2f - 150, _uiHeight / 2f, 300, 30), _state.WinReason);
+            var titleStyle = new GUIStyle(GUI.skin.label)
+            {
+                alignment = TextAnchor.MiddleCenter,
+                fontSize = 34,
+                fontStyle = FontStyle.Bold
+            };
+            var bodyStyle = new GUIStyle(GUI.skin.label)
+            {
+                alignment = TextAnchor.MiddleCenter,
+                fontSize = 18
+            };
+            GUI.Label(new Rect(_uiWidth / 2f - 220f, _uiHeight / 2f - 90f, 440f, 52f), text, titleStyle);
+            GUI.Label(new Rect(_uiWidth / 2f - 220f, _uiHeight / 2f - 32f, 440f, 40f),
+                _state.WinReason, bodyStyle);
+            if (GUI.Button(new Rect(_uiWidth / 2f - 155f, _uiHeight / 2f + 32f, 310f, 58f),
+                    "NEW DUEL / CHANGE SETS"))
+                ReturnToDeckSetup();
         }
 
         private static IReadOnlyCollection<long> SelectPayment(PlayerState player, CardDefinition definition)

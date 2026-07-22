@@ -116,6 +116,8 @@ namespace CardGame.Core
             public CardInstance[] DestructionTriggerSources = Array.Empty<CardInstance>();
             public DelayedAbilityEffect[] DestructionDelayedEffects =
                 Array.Empty<DelayedAbilityEffect>();
+            public CardInstance LastKnownEventCard;
+            public int LastKnownOwnerId = -1;
         }
 
         private sealed class ReplacementOption
@@ -140,6 +142,7 @@ namespace CardGame.Core
             public GameState State;
             public CardInstance Source;
             public CardInstance EventCard;
+            public int EventOwnerId = -1;
             public AbilityTiming Timing;
             public int ControllerId = -1;
             public DelayedAbilityEffect DelayedEffect;
@@ -147,13 +150,23 @@ namespace CardGame.Core
                 Array.Empty<RuleAbilityDefinition>();
         }
 
+        private sealed class PendingZoneReset
+        {
+            public GameState State;
+            public CardInstance Card;
+        }
+
         private readonly IAbilityDecisionProvider _decisions;
         private readonly HashSet<CardInstance> _powerEvaluation = new HashSet<CardInstance>();
         private readonly List<PendingTriggerInvocation> _pendingTriggers =
             new List<PendingTriggerInvocation>();
+        private readonly List<PendingZoneReset> _pendingZoneResets =
+            new List<PendingZoneReset>();
         private bool _resolvingStateBasedActions;
         private bool _drainingPendingTriggers;
         private int _abilityResolutionDepth;
+        private CardInstance _currentEventOwnerCard;
+        private int _currentEventOwnerId = -1;
 
         public AbilityResolver(IAbilityDecisionProvider decisions = null)
         {
@@ -313,7 +326,11 @@ namespace CardGame.Core
                     _pendingTriggers.RemoveAt(selectedIndex);
                     if (pending.State == null || pending.State.IsFinished) continue;
                     var previousEvent = pending.State.CurrentEventCard;
+                    var previousEventOwnerCard = _currentEventOwnerCard;
+                    var previousEventOwnerId = _currentEventOwnerId;
                     pending.State.CurrentEventCard = pending.EventCard;
+                    _currentEventOwnerCard = pending.EventCard;
+                    _currentEventOwnerId = pending.EventOwnerId;
                     try
                     {
                         if (pending.Kind == PendingTriggerKind.Delayed)
@@ -326,12 +343,39 @@ namespace CardGame.Core
                     finally
                     {
                         pending.State.CurrentEventCard = previousEvent;
+                        _currentEventOwnerCard = previousEventOwnerCard;
+                        _currentEventOwnerId = previousEventOwnerId;
                     }
                 }
             }
             finally
             {
                 _drainingPendingTriggers = false;
+            }
+            FlushPendingZoneResets();
+        }
+
+        private void QueueZoneReset(GameState state, CardInstance card)
+        {
+            if (state == null || card == null || _pendingZoneResets.Any(reset =>
+                    reset.State == state && reset.Card == card)) return;
+            _pendingZoneResets.Add(new PendingZoneReset { State = state, Card = card });
+        }
+
+        private void FlushPendingZoneResets()
+        {
+            if (_abilityResolutionDepth > 0 || _drainingPendingTriggers ||
+                _pendingZoneResets.Count == 0) return;
+            var resets = _pendingZoneResets.ToArray();
+            _pendingZoneResets.Clear();
+            foreach (var reset in resets)
+            {
+                if (reset?.State == null || reset.Card == null) continue;
+                var ownerId = FindOwnerId(reset.State, reset.Card);
+                if (ownerId < 0 || reset.State.Players[ownerId].BattleZone.Contains(reset.Card))
+                    continue;
+                reset.Card.ResetTransientZoneState(
+                    !reset.State.PendingShieldTriggers.Contains(reset.Card));
             }
         }
 
@@ -543,13 +587,15 @@ namespace CardGame.Core
         }
 
         public void ResolveAttackFinished(GameState state, CardInstance attacker,
-            bool attackedPlayer, int attackingPlayerId)
+            bool attackedPlayer, int attackingPlayerId,
+            int attackerZoneChangeVersion)
         {
             if (state == null || state.IsFinished || attacker == null ||
                 attackingPlayerId < 0 || attackingPlayerId >= state.Players.Length)
                 return;
             var afterAttackAbilities = attackedPlayer &&
-                    state.Players[attackingPlayerId].BattleZone.Contains(attacker)
+                    state.Players[attackingPlayerId].BattleZone.Contains(attacker) &&
+                    attacker.ZoneChangeVersion == attackerZoneChangeVersion
                 ? RulesOf(state, attacker).Where(rule =>
                     rule.Timing == AbilityTiming.AfterAttack).ToArray()
                 : Array.Empty<RuleAbilityDefinition>();
@@ -786,25 +832,38 @@ namespace CardGame.Core
         }
 
         public void ResolveBattleAftermath(GameState state, CardInstance attacker,
-            CardInstance defender, bool attackerSlayer, bool defenderSlayer,
-            bool destroyAttackerAfterBattle, bool destroyDefenderAfterBattle)
+            CardInstance defender, int attackerZoneChangeVersion,
+            int defenderZoneChangeVersion, bool attackerSlayer,
+            bool defenderSlayer, bool destroyAttackerAfterBattle,
+            bool destroyDefenderAfterBattle)
         {
             if (state == null || state.IsFinished || attacker == null ||
                 defender == null) return;
-            var attackerAbilities = RulesOf(state, attacker).Where(rule =>
-                    rule.Timing == AbilityTiming.AfterBattle).ToList();
-            var defenderAbilities = RulesOf(state, defender).Where(rule =>
-                    rule.Timing == AbilityTiming.AfterBattle).ToList();
-            if (attackerSlayer)
+            var attackerIsSameCreature = IsBattleZoneIncarnation(state, attacker,
+                attackerZoneChangeVersion);
+            var defenderIsSameCreature = IsBattleZoneIncarnation(state, defender,
+                defenderZoneChangeVersion);
+            var attackerAbilities = attackerIsSameCreature
+                ? RulesOf(state, attacker).Where(rule =>
+                    rule.Timing == AbilityTiming.AfterBattle).ToList()
+                : new List<RuleAbilityDefinition>();
+            var defenderAbilities = defenderIsSameCreature
+                ? RulesOf(state, defender).Where(rule =>
+                    rule.Timing == AbilityTiming.AfterBattle).ToList()
+                : new List<RuleAbilityDefinition>();
+            // Slayer belongs to the creature that battled and still resolves
+            // if that source was destroyed. Its target must still be the same
+            // opposing creature, however; a re-entered card is a new object.
+            if (attackerSlayer && defenderIsSameCreature)
                 attackerAbilities.Add(BattleDestructionAbility(
                     $"rules.slayer.{attacker.InstanceId}", false));
-            if (destroyAttackerAfterBattle)
+            if (destroyAttackerAfterBattle && attackerIsSameCreature)
                 attackerAbilities.Add(BattleDestructionAbility(
                     $"rules.destroy_after_battle.{attacker.InstanceId}", true));
-            if (defenderSlayer)
+            if (defenderSlayer && attackerIsSameCreature)
                 defenderAbilities.Add(BattleDestructionAbility(
                     $"rules.slayer.{defender.InstanceId}", false));
-            if (destroyDefenderAfterBattle)
+            if (destroyDefenderAfterBattle && defenderIsSameCreature)
                 defenderAbilities.Add(BattleDestructionAbility(
                     $"rules.destroy_after_battle.{defender.InstanceId}", true));
             _abilityResolutionDepth++;
@@ -820,6 +879,14 @@ namespace CardGame.Core
                 _abilityResolutionDepth--;
             }
             DrainPendingTriggers();
+        }
+
+        private static bool IsBattleZoneIncarnation(GameState state,
+            CardInstance card, int zoneChangeVersion)
+        {
+            if (state == null || card == null ||
+                card.ZoneChangeVersion != zoneChangeVersion) return false;
+            return state.Players.Any(player => player.BattleZone.Contains(card));
         }
 
         private static RuleAbilityDefinition BattleDestructionAbility(string id,
@@ -1246,10 +1313,12 @@ namespace CardGame.Core
                 HasKeyword(state, shield, CardKeyword.ShieldTrigger))
             {
                 defender.Shields.Remove(shield);
+                shield.ResetTransientZoneState();
                 state.Players[attackerId].Resolving.Add(shield);
                 state.SpellCastThisTurn[attackerId] = true;
                 ResolveSpellCast(state, shield);
                 state.Players[attackerId].Resolving.Remove(shield);
+                shield.ResetTransientZoneState();
                 if (HasKeyword(state, shield, CardKeyword.Charger))
                 {
                     shield.Tapped = shield.Definition.Civilizations.Length > 1;
@@ -1267,7 +1336,10 @@ namespace CardGame.Core
             if (HasKeyword(state, shield, CardKeyword.ShieldTrigger) &&
                 CanUseShieldTrigger(state, shield) &&
                 !state.PendingShieldTriggers.Contains(shield))
+            {
+                shield.BrokenByAttackerInstanceId = attacker.InstanceId;
                 state.PendingShieldTriggers.Add(shield);
+            }
         }
 
         public IReadOnlyList<CardInstance> ChooseShieldsToBreak(GameState state,
@@ -1391,9 +1463,12 @@ namespace CardGame.Core
         private void ScheduleGlobalEvent(GameState state, CardInstance eventCard,
             AbilityTiming timing, bool includeEventCard,
             IReadOnlyList<CardInstance> capturedSources,
-            IReadOnlyList<DelayedAbilityEffect> capturedDelayed)
+            IReadOnlyList<DelayedAbilityEffect> capturedDelayed,
+            CardInstance eventSnapshot = null, int eventOwnerId = -1)
         {
             if (state == null || eventCard == null) return;
+            var pendingEventCard = eventSnapshot ?? eventCard;
+            if (eventOwnerId < 0) eventOwnerId = FindOwnerId(state, eventCard);
             foreach (var source in (capturedSources ??
                          Array.Empty<CardInstance>()).Where(card =>
                          includeEventCard || card != eventCard))
@@ -1408,7 +1483,8 @@ namespace CardGame.Core
                     Kind = PendingTriggerKind.Source,
                     State = state,
                     Source = source,
-                    EventCard = eventCard,
+                    EventCard = pendingEventCard,
+                    EventOwnerId = eventOwnerId,
                     Timing = timing,
                     ControllerId = controllerId,
                     TriggeredAbilities = triggeredAbilities
@@ -1425,7 +1501,8 @@ namespace CardGame.Core
                     Kind = PendingTriggerKind.Delayed,
                     State = state,
                     Source = delayed.Source,
-                    EventCard = eventCard,
+                    EventCard = pendingEventCard,
+                    EventOwnerId = eventOwnerId,
                     Timing = timing,
                     ControllerId = delayed.OwnerPlayerId,
                     DelayedEffect = delayed
@@ -2286,7 +2363,11 @@ namespace CardGame.Core
                     var chosen = ChooseCardsSafely(state, ownerId, source, ability,
                         eligible, eligible.Length == 0 ? 0 : 1, 1).FirstOrDefault();
                     foreach (var revealed in topCards) owner.Deck.Remove(revealed);
-                    if (chosen != null) owner.Hand.Add(chosen);
+                    if (chosen != null)
+                    {
+                        chosen.ResetTransientZoneState();
+                        owner.Hand.Add(chosen);
+                    }
                     var remaining = topCards.Where(card => card != chosen).ToArray();
                     var ordered = ChooseCardsSafely(state, ownerId, source, ability,
                         remaining, remaining.Length, remaining.Length);
@@ -2310,11 +2391,13 @@ namespace CardGame.Core
                         player.Mana.Clear();
                         foreach (var card in oldMana)
                         {
+                            card.ResetTransientZoneState();
                             card.Tapped = false;
                             player.Hand.Add(card);
                         }
                         foreach (var card in oldHand)
                         {
+                            card.ResetTransientZoneState();
                             card.Tapped = true;
                             player.Mana.Add(card);
                         }
@@ -2362,6 +2445,8 @@ namespace CardGame.Core
                     foreach (var player in PlayersInActiveOrder(state))
                     {
                         var handCount = player.Hand.Count;
+                        foreach (var card in player.Hand)
+                            card.ResetTransientZoneState();
                         player.Deck.AddRange(player.Hand);
                         player.Hand.Clear();
                         Shuffle(player.Deck, state, player.PlayerId);
@@ -2371,6 +2456,8 @@ namespace CardGame.Core
                 case AbilityOperation.RefreshOwnHand:
                 {
                     var ownHandCount = owner.Hand.Count;
+                    foreach (var card in owner.Hand)
+                        card.ResetTransientZoneState();
                     owner.Deck.AddRange(owner.Hand);
                     owner.Hand.Clear();
                     Shuffle(owner.Deck, state, ownerId);
@@ -2587,7 +2674,10 @@ namespace CardGame.Core
                                     CardKeyword.ShieldTrigger) && CanUseShieldTrigger(state, card))
                                 state.PendingShieldTriggers.Add(card);
                         }
-                        card.BrokenByAttackerInstanceId = source.InstanceId;
+                        card.BrokenByAttackerInstanceId =
+                            state.PendingShieldTriggers.Contains(card)
+                                ? source.InstanceId
+                                : 0;
                         brokenShields++;
                     }
                     state.ShieldsBrokenThisTurn[ownerId] += brokenShields;
@@ -2664,8 +2754,10 @@ namespace CardGame.Core
                         owner.Shields.Remove(shield);
                         owner.Resolving.Add(shield);
                         state.SpellCastThisTurn[ownerId] = true;
+                        shield.ResetTransientZoneState();
                         ResolveSpellCast(state, shield);
                         owner.Resolving.Remove(shield);
+                        shield.ResetTransientZoneState();
                         shield.Tapped = shield.Definition.Civilizations.Length > 1;
                         if (HasKeyword(state, shield, CardKeyword.Charger)) owner.Mana.Add(shield);
                         else owner.Graveyard.Add(shield);
@@ -2673,8 +2765,10 @@ namespace CardGame.Core
                     break;
                 case AbilityOperation.ScheduleSelectedUntapAfterBattle:
                     foreach (var card in selected)
-                        if (!state.UntapAfterCurrentBattle.Contains(card))
-                            state.UntapAfterCurrentBattle.Add(card);
+                        if (!state.UntapAfterCurrentBattle.Any(reference =>
+                                reference != null && reference.Matches(card)))
+                            state.UntapAfterCurrentBattle.Add(
+                                new CardIncarnationReference(card));
                     break;
                 case AbilityOperation.ScheduleSelectedUntapAtEndOfTurn:
                     if (selected.Count > 0)
@@ -2696,8 +2790,10 @@ namespace CardGame.Core
                     }
                     break;
                 case AbilityOperation.ScheduleSourceDestructionAfterBattle:
-                    if (!state.DestroyAfterCurrentBattle.Contains(source))
-                        state.DestroyAfterCurrentBattle.Add(source);
+                    if (!state.DestroyAfterCurrentBattle.Any(reference =>
+                            reference != null && reference.Matches(source)))
+                        state.DestroyAfterCurrentBattle.Add(
+                            new CardIncarnationReference(source));
                     break;
                 case AbilityOperation.DestroyAndRecruitFromDeck:
                     foreach (var target in selected)
@@ -2885,10 +2981,10 @@ namespace CardGame.Core
             if (condition.EventCardIsSource) result &= state.CurrentEventCard == source;
             if (condition.EventControlledByOpponent)
                 result &= state.CurrentEventCard != null &&
-                    FindOwnerId(state, state.CurrentEventCard) != ownerId;
+                    CurrentEventOwnerId(state) != ownerId;
             if (condition.EventControlledByOwner)
                 result &= state.CurrentEventCard != null &&
-                    FindOwnerId(state, state.CurrentEventCard) == ownerId;
+                    CurrentEventOwnerId(state) == ownerId;
             if (condition.EventCardMatchesFilter)
                 result &= state.CurrentEventCard != null &&
                     MatchesFilter(state, state.CurrentEventCard, source, condition.Filter);
@@ -2964,6 +3060,15 @@ namespace CardGame.Core
                 }
             }
             return condition.Invert ? !result : result;
+        }
+
+        private int CurrentEventOwnerId(GameState state)
+        {
+            if (state?.CurrentEventCard == _currentEventOwnerCard &&
+                _currentEventOwnerId >= 0) return _currentEventOwnerId;
+            return state?.CurrentEventCard == null
+                ? -1
+                : FindOwnerId(state, state.CurrentEventCard);
         }
 
         private bool MatchesStaticTarget(GameState state, CardInstance source, CardInstance target, RuleSelectorDefinition selector)
@@ -3116,6 +3221,8 @@ namespace CardGame.Core
             var ownerId = FindOwnerId(state, card);
             plan.OwnerId = ownerId;
             if (ownerId < 0 || !state.Players[ownerId].BattleZone.Contains(card)) return plan;
+            plan.LastKnownOwnerId = ownerId;
+            plan.LastKnownEventCard = CreateLastKnownEventCard(state, card);
             var replacement = ChooseDestructionReplacement(state, card,
                 unavailableReplacementSources);
             if (replacement != null)
@@ -3127,6 +3234,41 @@ namespace CardGame.Core
                 plan.ReplacementDestinationTapped = replacement.DestinationTapped;
             }
             return plan;
+        }
+
+        private CardInstance CreateLastKnownEventCard(GameState state, CardInstance card)
+        {
+            if (state == null || card == null || card.Definition == null) return card;
+            var snapshot = new CardInstance
+            {
+                InstanceId = card.InstanceId,
+                Definition = card.Definition,
+                ZoneChangeVersion = card.ZoneChangeVersion,
+                Tapped = card.Tapped,
+                EnteredBattleZoneOnTurn = card.EnteredBattleZoneOnTurn,
+                TemporaryPower = CurrentPower(state, card) - card.Definition.Power,
+                TemporaryPowerAttacker = card.TemporaryPowerAttacker,
+                TemporaryDoubleBreaker = card.TemporaryDoubleBreaker,
+                TemporaryBreakerCount = card.TemporaryBreakerCount,
+                AttackedThisTurn = card.AttackedThisTurn,
+                BrokeShieldThisTurn = card.BrokeShieldThisTurn,
+                ShieldsBrokenInLastAttack = card.ShieldsBrokenInLastAttack,
+                BrokenByAttackerInstanceId = card.BrokenByAttackerInstanceId,
+                ChosenRace = card.ChosenRace,
+                FaceUp = card.FaceUp,
+                WasAttackedThisTurn = card.WasAttackedThisTurn,
+                ChosenCivilization = card.ChosenCivilization,
+                HasChosenCivilization = card.HasChosenCivilization
+            };
+            snapshot.TemporaryRaces.AddRange(card.TemporaryRaces);
+            foreach (CardKeyword keyword in Enum.GetValues(typeof(CardKeyword)))
+                if (!snapshot.Definition.HasKeyword(keyword) &&
+                    HasKeyword(state, card, keyword))
+                    snapshot.TemporaryKeywords.Add(keyword);
+            if (HasBlockerAbility(state, card) &&
+                !snapshot.HasKeyword(CardKeyword.Blocker))
+                snapshot.TemporaryKeywords.Add(CardKeyword.Blocker);
+            return snapshot;
         }
 
         private DestructionOutcome ApplyDestructionPlan(GameState state, DestructionPlan plan,
@@ -3184,7 +3326,8 @@ namespace CardGame.Core
             if (state.IsFinished) return DestructionOutcome.Destroyed;
             ScheduleGlobalEvent(state, card, AbilityTiming.OnOtherCreatureDestroyed,
                 false, plan.DestructionTriggerSources,
-                plan.DestructionDelayedEffects);
+                plan.DestructionDelayedEffects, plan.LastKnownEventCard,
+                plan.LastKnownOwnerId);
             return DestructionOutcome.Destroyed;
         }
 
@@ -3199,13 +3342,14 @@ namespace CardGame.Core
                     AbilityTiming.OnOtherCreatureDestroyed, false);
                 var delayed = CaptureDelayedTriggers(state,
                     AbilityTiming.OnOtherCreatureDestroyed);
+                var eventSnapshot = CreateLastKnownEventCard(state, card);
                 MoveCard(state, card, RuleZone.Graveyard, false, false, -1,
                     false);
                 Resolve(state, card, AbilityTiming.OnDestroyed);
                 Resolve(state, card, AbilityTiming.OnLeaveBattleZone);
                 ScheduleGlobalEvent(state, card,
                     AbilityTiming.OnOtherCreatureDestroyed, false,
-                    watchers, delayed);
+                    watchers, delayed, eventSnapshot, ownerId);
             }
             finally
             {
@@ -3255,6 +3399,7 @@ namespace CardGame.Core
             var owner = state.Players[ownerId];
             if (!owner.BattleZone.Contains(evolution)) return;
 
+            QueueZoneReset(state, evolution);
             owner.BattleZone.Remove(evolution);
             RebuildEvolutionPile(owner, evolution);
             evolution.Tapped = destination == RuleZone.ManaZone &&
@@ -3277,8 +3422,12 @@ namespace CardGame.Core
             var remaining = removedTop.EvolutionMaterials.ToArray();
             removedTop.EvolutionMaterials.Clear();
             var rebuiltTop = remaining[0];
+            rebuiltTop.ResetTransientZoneState();
             for (var index = 1; index < remaining.Length; index++)
+            {
+                remaining[index].ResetTransientZoneState();
                 rebuiltTop.EvolutionMaterials.Add(remaining[index]);
+            }
             rebuiltTop.Tapped = removedTop.Tapped;
             owner.BattleZone.Add(rebuiltTop);
             return rebuiltTop;
@@ -3294,15 +3443,24 @@ namespace CardGame.Core
             var leavingBattleZone = player.BattleZone.Contains(card) && destination != RuleZone.BattleZone;
             var leavingManaZone = player.Mana.Contains(card) && destination == RuleZone.Graveyard;
             var leavingDeck = player.Deck.Contains(card) && destination != RuleZone.Deck;
+            var alreadyInDestination = Zone(player, destination).Contains(card);
+            var resetImmediately = !leavingBattleZone && !alreadyInDestination;
             var entersEvolutionPile = destination == RuleZone.BattleZone &&
                 !player.BattleZone.Contains(card) &&
                 card.Definition.Type == CardType.EvolutionCreature;
             if (entersEvolutionPile && !TryAttachEvolutionSourcesForEffect(state, player, card))
                 return false;
+            if (resetImmediately) card.ResetTransientZoneState();
+            else if (leavingBattleZone) QueueZoneReset(state, card);
             if (allowLeaveBattleZoneReplacement && leavingBattleZone &&
                 TryApplyLeaveBattleZoneStateEffect(state, card, destination,
                     tapped, resolveLeaveTrigger)) return true;
-            var materials = FlattenEvolutionMaterials(card).ToArray();
+            // Newly attached evolution sources remain under the evolution card.
+            // Existing piles only separate when the complete pile actually
+            // leaves the battle zone.
+            var materials = entersEvolutionPile
+                ? Array.Empty<CardInstance>()
+                : FlattenEvolutionMaterials(card).ToArray();
             IReadOnlyList<CardInstance> orderedDeckPile = null;
             if (destination == RuleZone.Deck && materials.Length > 0)
             {
@@ -3339,9 +3497,10 @@ namespace CardGame.Core
             card.Tapped = entersEvolutionPile ? card.Tapped :
                 tapped || destination == RuleZone.ManaZone &&
                 card.Definition.Civilizations.Length > 1;
-            card.EvolutionMaterials.Clear();
+            if (!entersEvolutionPile) card.EvolutionMaterials.Clear();
             foreach (var material in materials)
             {
+                material.ResetTransientZoneState();
                 material.EvolutionMaterials.Clear();
                 material.FaceUp = false;
                 material.Tapped = tapped || destination == RuleZone.ManaZone &&
@@ -3432,6 +3591,9 @@ namespace CardGame.Core
             evolution.EnteredBattleZoneOnTurn = -1;
             foreach (var source in chosen)
             {
+                source.ResetTransientZoneState();
+                foreach (var material in FlattenEvolutionMaterials(source))
+                    material.ResetTransientZoneState();
                 player.BattleZone.Remove(source);
                 evolution.EvolutionMaterials.Add(source);
             }
@@ -3502,6 +3664,7 @@ namespace CardGame.Core
                     card, replacement)) return false;
 
             var owner = state.Players[ownerId];
+            QueueZoneReset(state, card);
             owner.BattleZone.Remove(card);
             SeparateEvolutionSources(owner, card);
             card.Tapped = tapped || destination == RuleZone.ManaZone &&
@@ -3525,6 +3688,9 @@ namespace CardGame.Core
             removedTop.EvolutionMaterials.Clear();
             foreach (var source in sources)
             {
+                source.ResetTransientZoneState();
+                foreach (var material in FlattenEvolutionMaterials(source))
+                    material.ResetTransientZoneState();
                 source.Tapped = removedTop.Tapped;
                 owner.BattleZone.Add(source);
             }
@@ -3566,6 +3732,7 @@ namespace CardGame.Core
                 }
                 var card = player.Deck[player.Deck.Count - 1];
                 player.Deck.RemoveAt(player.Deck.Count - 1);
+                card.ResetTransientZoneState();
                 player.Hand.Add(card);
                 state.CardsDrawnThisTurn[player.PlayerId]++;
                 if (player.Deck.Count == 0)

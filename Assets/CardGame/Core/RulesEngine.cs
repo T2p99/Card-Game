@@ -57,6 +57,7 @@ namespace CardGame.Core
             if (card == null) return RuleResult.Fail("The selected card is not in the player's hand.");
 
             player.Hand.Remove(card);
+            card.ResetTransientZoneState();
             card.Tapped = card.Definition.Civilizations.Length > 1;
             player.Mana.Add(card);
             state.ManaChargedThisTurn = true;
@@ -126,11 +127,14 @@ namespace CardGame.Core
             TapMana(player, manaInstanceIds);
             state.MainActionTakenThisTurn = true;
             player.Hand.Remove(creature);
+            creature.ResetTransientZoneState();
             if (evolutionBases.Count > 0)
             {
                 creature.Tapped = evolutionBases.Any(card => card.Tapped);
                 foreach (var evolutionBase in evolutionBases)
                 {
+                    foreach (var pileCard in CardAndEvolutionMaterials(evolutionBase))
+                        pileCard.ResetTransientZoneState();
                     player.BattleZone.Remove(evolutionBase);
                     creature.EvolutionMaterials.Add(evolutionBase);
                 }
@@ -201,6 +205,7 @@ namespace CardGame.Core
             state.MainActionTakenThisTurn = true;
             state.SpellCastThisTurn[playerId] = true;
             player.Hand.Remove(spell);
+            spell.ResetTransientZoneState();
             player.Resolving.Add(spell);
             _abilities.ResolveSpellCast(state, spell,
                 () => ResolveSpellEffects(state, playerId, spell.Definition,
@@ -248,6 +253,7 @@ namespace CardGame.Core
             state.PendingShieldTriggers.Remove(card);
             state.SpellCastThisTurn[defendingPlayerId] = true;
             player.Hand.Remove(card);
+            card.ResetTransientZoneState(false);
             player.Resolving.Add(card);
             _abilities.ResolveSpellCast(state, card,
                 () => ResolveSpellEffects(state, defendingPlayerId,
@@ -294,9 +300,12 @@ namespace CardGame.Core
 
             state.PendingShieldTriggers.Remove(creature);
             player.Hand.Remove(creature);
+            creature.ResetTransientZoneState();
             if (evolutionBase != null)
             {
                 creature.Tapped = evolutionBase.Tapped;
+                foreach (var pileCard in CardAndEvolutionMaterials(evolutionBase))
+                    pileCard.ResetTransientZoneState();
                 player.BattleZone.Remove(evolutionBase);
                 creature.EvolutionMaterials.Add(evolutionBase);
                 creature.EnteredBattleZoneOnTurn = -1;
@@ -319,6 +328,7 @@ namespace CardGame.Core
         private void PlaceResolvedSpell(GameState state, PlayerState player, CardInstance spell,
             bool castByShieldTrigger)
         {
+            spell.ResetTransientZoneState();
             // Charger is the spell's own movement replacement, so it has
             // priority over battlefield replacements such as Bailas Gale.
             if (spell.Definition.HasKeyword(CardKeyword.Charger))
@@ -408,14 +418,6 @@ namespace CardGame.Core
             state.RequiredBlockerInstanceId = 0;
             attacker.Tapped = true;
             attacker.ShieldsBrokenInLastAttack = 0;
-            state.PendingAttack = new PendingAttack
-            {
-                AttackerInstanceId = attackerInstanceId,
-                TargetKind = targetKind,
-                TargetCreatureInstanceId = targetCreatureInstanceId,
-                DefendingPlayerId = state.Opponent.PlayerId
-            };
-            attacker.AttackedThisTurn = true;
             CardInstance attackedCreature = null;
             if (targetKind == AttackTargetKind.Creature)
             {
@@ -423,9 +425,21 @@ namespace CardGame.Core
                     targetCreatureInstanceId);
                 if (attackedCreature != null) attackedCreature.WasAttackedThisTurn = true;
             }
+            state.PendingAttack = new PendingAttack
+            {
+                AttackerInstanceId = attackerInstanceId,
+                AttackerZoneChangeVersion = attacker.ZoneChangeVersion,
+                TargetKind = targetKind,
+                TargetCreatureInstanceId = targetCreatureInstanceId,
+                TargetCreatureZoneChangeVersion = attackedCreature?.ZoneChangeVersion ?? -1,
+                DefendingPlayerId = state.Opponent.PlayerId
+            };
+            attacker.AttackedThisTurn = true;
             ResolveAttackAbilities(state, playerId, attacker);
             if (state.IsFinished) return RuleResult.Ok();
             _abilities.ResolveAttackDeclaration(state, attacker, attackedCreature);
+            if (!PendingAttackParticipantsRemain(state, state.PendingAttack))
+                ConcludeInterruptedAttack(state, state.PendingAttack);
             return RuleResult.Ok();
         }
 
@@ -464,7 +478,13 @@ namespace CardGame.Core
             if (blocker.Tapped) return RuleResult.Fail("A tapped creature cannot block.");
             var attackingPlayer = state.Players[1 - defendingPlayerId];
             var attacker = Find(attackingPlayer.BattleZone, attack.AttackerInstanceId);
-            if (attacker == null || !_abilities.CanUseAsBlocker(state, blocker, attacker))
+            if (attacker == null ||
+                attacker.ZoneChangeVersion != attack.AttackerZoneChangeVersion)
+            {
+                ConcludeInterruptedAttack(state, attack);
+                return RuleResult.Fail("The attacking creature is no longer in this attack.");
+            }
+            if (!_abilities.CanUseAsBlocker(state, blocker, attacker))
                 return RuleResult.Fail("The selected creature does not have Blocker.");
             if (attacker != null && _abilities.HasKeyword(state, attacker, CardKeyword.Unblockable))
                 return RuleResult.Fail("This attacker cannot be blocked.");
@@ -482,10 +502,14 @@ namespace CardGame.Core
                 !attacker.TemporaryKeywords.Contains(CardKeyword.Slayer))
                 attacker.TemporaryKeywords.Add(CardKeyword.Slayer);
             blocker.Tapped = true;
+            var blockerZoneChangeVersion = blocker.ZoneChangeVersion;
             state.CurrentBlockerInstanceId = blocker.InstanceId;
             if (attacker != null)
                 _abilities.ResolveBlockDeclaration(state, attacker, blocker);
-            if (attacker != null && _abilities.BlockedAttackerBreaksShield(
+            if (attacker != null &&
+                attacker.ZoneChangeVersion == attack.AttackerZoneChangeVersion &&
+                attackingPlayer.BattleZone.Contains(attacker) &&
+                _abilities.BlockedAttackerBreaksShield(
                     state, attackingPlayer.PlayerId, attacker))
                 ResolveShieldBreaks(state, attacker, defender, 1);
             if (state.PreventPendingBattle)
@@ -496,7 +520,9 @@ namespace CardGame.Core
             }
             else
             {
-                ResolveCreatureBattle(state, attack.AttackerInstanceId, blocker.InstanceId);
+                ResolveCreatureBattle(state, attack.AttackerInstanceId,
+                    blocker.InstanceId, attack.AttackerZoneChangeVersion,
+                    blockerZoneChangeVersion);
                 ResolveScheduledAfterBattleEffects(state);
             }
             if (state.IsFinished)
@@ -519,6 +545,11 @@ namespace CardGame.Core
             if (attack == null) return RuleResult.Fail("There is no pending attack.");
             if (attack.DefendingPlayerId != defendingPlayerId)
                 return RuleResult.Fail("This player is not defending the pending attack.");
+            if (!PendingAttackParticipantsRemain(state, attack))
+            {
+                ConcludeInterruptedAttack(state, attack);
+                return RuleResult.Ok();
+            }
 
             if (state.RequiredBlockerInstanceId != 0)
             {
@@ -557,7 +588,10 @@ namespace CardGame.Core
 
             if (attack.TargetKind == AttackTargetKind.Creature)
             {
-                ResolveCreatureBattle(state, attack.AttackerInstanceId, attack.TargetCreatureInstanceId);
+                ResolveCreatureBattle(state, attack.AttackerInstanceId,
+                    attack.TargetCreatureInstanceId,
+                    attack.AttackerZoneChangeVersion,
+                    attack.TargetCreatureZoneChangeVersion);
                 ResolveScheduledAfterBattleEffects(state);
             }
             else
@@ -565,7 +599,8 @@ namespace CardGame.Core
                 var attacker = Find(state.ActivePlayer.BattleZone, attack.AttackerInstanceId);
                 if (attacker != null)
                     _abilities.ResolveUnblockedPlayerAttack(state, attacker);
-                ResolvePlayerAttack(state, attack.AttackerInstanceId, defendingPlayerId);
+                ResolvePlayerAttack(state, attack.AttackerInstanceId,
+                    attack.AttackerZoneChangeVersion, defendingPlayerId);
             }
 
             if (state.IsFinished)
@@ -592,7 +627,11 @@ namespace CardGame.Core
 
         private static void ResolveScheduledAfterBattleEffects(GameState state)
         {
-            foreach (var card in state.UntapAfterCurrentBattle) card.Tapped = false;
+            foreach (var reference in state.UntapAfterCurrentBattle)
+                if (reference?.Card != null && reference.Matches(reference.Card) &&
+                    state.Players.Any(player =>
+                        player.BattleZone.Contains(reference.Card)))
+                    reference.Card.Tapped = false;
             state.UntapAfterCurrentBattle.Clear();
             state.DestroyAfterCurrentBattle.Clear();
         }
@@ -741,6 +780,8 @@ namespace CardGame.Core
                 return RuleResult.Fail("Unknown player.");
             // Card-specific effects are resolved by the effect layer. Retaining candidates
             // here prevents presentation from silently skipping the shield-trigger window.
+            foreach (var card in state.PendingShieldTriggers)
+                card.BrokenByAttackerInstanceId = 0;
             state.PendingShieldTriggers.Clear();
             return RuleResult.Ok();
         }
@@ -800,7 +841,9 @@ namespace CardGame.Core
                 return RuleResult.Ok();
             }
 
-            state.ActivePlayer.Hand.Add(DrawTop(state.ActivePlayer.Deck));
+            var drawn = DrawTop(state.ActivePlayer.Deck);
+            drawn.ResetTransientZoneState();
+            state.ActivePlayer.Hand.Add(drawn);
             state.CardsDrawnThisTurn[state.ActivePlayerId]++;
             if (state.ActivePlayer.Deck.Count == 0)
                 Finish(state, state.Opponent.PlayerId, "Deck out");
@@ -959,6 +1002,7 @@ namespace CardGame.Core
                         if (target != null)
                         {
                             player.Graveyard.Remove(target);
+                            target.ResetTransientZoneState();
                             player.Hand.Add(target);
                         }
                         break;
@@ -968,6 +1012,7 @@ namespace CardGame.Core
                             var random = new Random(unchecked(state.RandomSeed * 397 ^ state.RandomActionIndex++));
                             var discarded = opponent.Hand[random.Next(opponent.Hand.Count)];
                             opponent.Hand.Remove(discarded);
+                            discarded.ResetTransientZoneState();
                             opponent.Graveyard.Add(discarded);
                         }
                         break;
@@ -1059,7 +1104,9 @@ namespace CardGame.Core
                     Finish(state, opponent.PlayerId, "Deck out");
                     return;
                 }
-                player.Hand.Add(DrawTop(player.Deck));
+                var card = DrawTop(player.Deck);
+                card.ResetTransientZoneState();
+                player.Hand.Add(card);
                 if (player.Deck.Count == 0)
                 {
                     Finish(state, opponent.PlayerId, "Deck out");
@@ -1077,6 +1124,7 @@ namespace CardGame.Core
             for (var i = 0; i < count && player.Deck.Count > 0; i++)
             {
                 var card = DrawTop(player.Deck);
+                card.ResetTransientZoneState();
                 card.Tapped = card.Definition.Civilizations.Length > 1;
                 player.Mana.Add(card);
                 if (player.Deck.Count == 0)
@@ -1100,6 +1148,7 @@ namespace CardGame.Core
                     if (target != null)
                     {
                         player.Graveyard.Remove(target);
+                        target.ResetTransientZoneState();
                         player.Hand.Add(target);
                     }
                     break;
@@ -1108,6 +1157,7 @@ namespace CardGame.Core
                     {
                         var shield = player.Shields[player.Shields.Count - 1];
                         player.Shields.RemoveAt(player.Shields.Count - 1);
+                        shield.ResetTransientZoneState();
                         player.Graveyard.Add(shield);
                     }
                     break;
@@ -1132,15 +1182,44 @@ namespace CardGame.Core
             if (eventAttacker != null)
                 _abilities.ResolveAttackFinished(state, eventAttacker,
                     attack.TargetKind == AttackTargetKind.Player,
-                    1 - attack.DefendingPlayerId);
+                    1 - attack.DefendingPlayerId,
+                    attack.AttackerZoneChangeVersion);
             var owner = FindOwner(state, attack.AttackerInstanceId);
             var attacker = owner == null
                 ? null
                 : Find(owner.BattleZone, attack.AttackerInstanceId);
             if (attack.TargetKind == AttackTargetKind.Player && attacker != null &&
+                attacker.ZoneChangeVersion == attack.AttackerZoneChangeVersion &&
                 attacker.Definition.RuleAbilities.Length == 0 &&
                 attacker.Definition.Id == "dm02-032")
                 Destroy(state, owner, attacker);
+        }
+
+        private static bool PendingAttackParticipantsRemain(GameState state,
+            PendingAttack attack)
+        {
+            if (state == null || attack == null || attack.DefendingPlayerId < 0 ||
+                attack.DefendingPlayerId >= state.Players.Length) return false;
+            var attackingPlayerId = 1 - attack.DefendingPlayerId;
+            var attacker = Find(state.Players[attackingPlayerId].BattleZone,
+                attack.AttackerInstanceId);
+            if (attacker == null ||
+                attacker.ZoneChangeVersion != attack.AttackerZoneChangeVersion)
+                return false;
+            if (attack.TargetKind != AttackTargetKind.Creature) return true;
+            var target = Find(state.Players[attack.DefendingPlayerId].BattleZone,
+                attack.TargetCreatureInstanceId);
+            return target != null &&
+                target.ZoneChangeVersion == attack.TargetCreatureZoneChangeVersion;
+        }
+
+        private void ConcludeInterruptedAttack(GameState state, PendingAttack attack)
+        {
+            if (state == null || attack == null) return;
+            if (!state.IsFinished) ResolveAfterAttackAbilities(state, attack);
+            state.PendingAttack = null;
+            state.CurrentBlockerInstanceId = 0;
+            state.RequiredBlockerInstanceId = 0;
         }
 
         private int AttackPower(GameState state, PlayerState owner, CardInstance attacker)
@@ -1195,10 +1274,13 @@ namespace CardGame.Core
             var random = new Random(unchecked(state.RandomSeed * 397 ^ state.RandomActionIndex++));
             var discarded = player.Hand[random.Next(player.Hand.Count)];
             player.Hand.Remove(discarded);
+            discarded.ResetTransientZoneState();
             player.Graveyard.Add(discarded);
         }
 
-        private void ResolveCreatureBattle(GameState state, long attackerId, long defenderId)
+        private void ResolveCreatureBattle(GameState state, long attackerId,
+            long defenderId, int attackerZoneChangeVersion,
+            int defenderZoneChangeVersion)
         {
             var attackerOwner = FindOwner(state, attackerId);
             var defenderOwner = FindOwner(state, defenderId);
@@ -1206,7 +1288,9 @@ namespace CardGame.Core
 
             var attacker = Find(attackerOwner.BattleZone, attackerId);
             var defender = Find(defenderOwner.BattleZone, defenderId);
-            if (attacker == null || defender == null) return;
+            if (attacker == null || defender == null ||
+                attacker.ZoneChangeVersion != attackerZoneChangeVersion ||
+                defender.ZoneChangeVersion != defenderZoneChangeVersion) return;
 
             state.CurrentBattleAttackerInstanceId = attackerId;
             state.CurrentBattleDefenderInstanceId = defenderId;
@@ -1217,14 +1301,18 @@ namespace CardGame.Core
             var defenderSlayer = _abilities.HasKeyword(state, defender, CardKeyword.Slayer);
             var destroyAttackerAfterBattle = _abilities.HasKeyword(state, attacker,
                 CardKeyword.DestroyAfterBattle) ||
-                state.DestroyAfterCurrentBattle.Contains(attacker);
+                state.DestroyAfterCurrentBattle.Any(reference =>
+                    reference != null && reference.Matches(attacker));
             var destroyDefenderAfterBattle = _abilities.HasKeyword(state, defender,
                 CardKeyword.DestroyAfterBattle) ||
-                state.DestroyAfterCurrentBattle.Contains(defender);
+                state.DestroyAfterCurrentBattle.Any(reference =>
+                    reference != null && reference.Matches(defender));
             _abilities.ResolveBattleStart(state, attacker, defender);
 
             var battleContinues = attackerOwner.BattleZone.Contains(attacker) &&
-                defenderOwner.BattleZone.Contains(defender);
+                defenderOwner.BattleZone.Contains(defender) &&
+                attacker.ZoneChangeVersion == attackerZoneChangeVersion &&
+                defender.ZoneChangeVersion == defenderZoneChangeVersion;
             if (battleContinues && !state.IsFinished)
             {
                 var attackerPower = AttackPower(state, attackerOwner, attacker);
@@ -1240,17 +1328,20 @@ namespace CardGame.Core
             // the battle happened, even if either creature has since left.
             if (!state.IsFinished)
                 _abilities.ResolveBattleAftermath(state, attacker, defender,
+                    attackerZoneChangeVersion, defenderZoneChangeVersion,
                     attackerSlayer, defenderSlayer,
                     destroyAttackerAfterBattle, destroyDefenderAfterBattle);
             state.CurrentBattleAttackerInstanceId = 0;
             state.CurrentBattleDefenderInstanceId = 0;
         }
 
-        private void ResolvePlayerAttack(GameState state, long attackerId, int defendingPlayerId)
+        private void ResolvePlayerAttack(GameState state, long attackerId,
+            int attackerZoneChangeVersion, int defendingPlayerId)
         {
             var attacker = Find(state.ActivePlayer.BattleZone, attackerId);
             var defender = state.Players[defendingPlayerId];
-            if (attacker == null) return;
+            if (attacker == null ||
+                attacker.ZoneChangeVersion != attackerZoneChangeVersion) return;
 
             if (defender.Shields.Count == 0)
             {
@@ -1279,6 +1370,7 @@ namespace CardGame.Core
                     state, attacker, shield, defender.PlayerId);
                 if (replacement == ShieldBreakReplacementResult.Prevented) continue;
                 defender.Shields.Remove(shield);
+                shield.ResetTransientZoneState();
                 if (replacement == ShieldBreakReplacementResult.AttackerCastsShieldTrigger)
                 {
                     state.InspectionPlayerId = state.ActivePlayerId;
@@ -1294,6 +1386,7 @@ namespace CardGame.Core
                                 state.ActivePlayerId, shield.Definition, 0));
                         if (state.IsFinished) break;
                         state.ActivePlayer.Resolving.Remove(shield);
+                        shield.ResetTransientZoneState();
                         if (_abilities.HasKeyword(state, shield, CardKeyword.Charger))
                         {
                             shield.Tapped = shield.Definition.Civilizations.Length > 1;
@@ -1312,9 +1405,11 @@ namespace CardGame.Core
                                 CardKeyword.ShieldTrigger) &&
                             _abilities.CanUseShieldTrigger(state, shield) &&
                             !state.PendingShieldTriggers.Contains(shield))
+                        {
+                            shield.BrokenByAttackerInstanceId = attacker.InstanceId;
                             state.PendingShieldTriggers.Add(shield);
+                        }
                     }
-                    shield.BrokenByAttackerInstanceId = attacker.InstanceId;
                     attacker.BrokeShieldThisTurn = true;
                     attacker.ShieldsBrokenInLastAttack++;
                     state.ShieldsBrokenThisTurn[state.ActivePlayerId]++;
@@ -1324,12 +1419,15 @@ namespace CardGame.Core
                     ShieldBreakReplacementResult.MoveToGraveyard;
                 if (sendToGraveyard) defender.Graveyard.Add(shield);
                 else defender.Hand.Add(shield);
-                shield.BrokenByAttackerInstanceId = attacker.InstanceId;
                 attacker.BrokeShieldThisTurn = true;
                 attacker.ShieldsBrokenInLastAttack++;
                 state.ShieldsBrokenThisTurn[state.ActivePlayerId]++;
                 if (!sendToGraveyard && _abilities.HasKeyword(state, shield, CardKeyword.ShieldTrigger))
-                    if (_abilities.CanUseShieldTrigger(state, shield)) state.PendingShieldTriggers.Add(shield);
+                    if (_abilities.CanUseShieldTrigger(state, shield))
+                    {
+                        shield.BrokenByAttackerInstanceId = attacker.InstanceId;
+                        state.PendingShieldTriggers.Add(shield);
+                    }
             }
         }
 

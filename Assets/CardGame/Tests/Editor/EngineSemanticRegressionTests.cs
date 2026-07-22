@@ -366,6 +366,207 @@ namespace CardGame.Core.Tests
         }
 
         [Test]
+        public void LeavingBattleZone_ClearsTransientStateAfterLeaveTriggersResolve()
+        {
+            var state = EmptyState();
+            var sourceDefinition = Creature("bounce-source");
+            sourceDefinition.RuleAbilities = new[]
+            {
+                new RuleAbilityDefinition("test.bounce", AbilityTiming.OnSummon,
+                    AbilityOperation.Move)
+                {
+                    Destination = RuleZone.Hand,
+                    Selector = new RuleSelectorDefinition
+                    {
+                        Controller = RuleController.Opponent,
+                        Zone = RuleZone.BattleZone,
+                        Mode = RuleSelectionMode.Choose,
+                        Minimum = 1,
+                        Maximum = 1,
+                        Filter = new CardFilterDefinition { CreaturesOnly = true }
+                    }
+                }
+            };
+            var source = Instance(10, sourceDefinition);
+            var target = Instance(20, Creature("temporarily-modified-target"));
+            target.Tapped = true;
+            target.EnteredBattleZoneOnTurn = state.TurnNumber;
+            target.TemporaryPowerAttacker = 2000;
+            target.TemporaryPower = 3000;
+            target.TemporaryDoubleBreaker = true;
+            target.TemporaryBreakerCount = 3;
+            target.TemporaryKeywords.Add(CardKeyword.Blocker);
+            target.TimedKeywords.Add(new TimedKeywordEffect
+            {
+                Keyword = CardKeyword.Slayer,
+                Value = 1,
+                Duration = AbilityDuration.UntilEndOfTurn,
+                AppliedByPlayerId = 0
+            });
+            target.TimedRuleAbilities.Add(new TimedRuleEffect
+            {
+                Ability = new RuleAbilityDefinition("test.granted-leave-draw",
+                    AbilityTiming.OnLeaveBattleZone, AbilityOperation.Draw)
+                {
+                    Amount = 1
+                },
+                Duration = AbilityDuration.UntilEndOfTurn,
+                AppliedByPlayerId = 0
+            });
+            target.AttackedThisTurn = true;
+            target.BrokeShieldThisTurn = true;
+            target.ShieldsBrokenInLastAttack = 2;
+            target.BrokenByAttackerInstanceId = 999;
+            target.TemporaryRaces.Add("Dragon");
+            target.ChosenRace = "Dragon";
+            target.FaceUp = true;
+            target.WasAttackedThisTurn = true;
+            target.ChosenCivilization = Civilization.Nature;
+            target.HasChosenCivilization = true;
+            state.Players[0].BattleZone.Add(source);
+            state.Players[1].BattleZone.Add(target);
+            state.Players[1].Deck.Add(Instance(30, Creature("draw-buffer")));
+            var drawn = Instance(31, Creature("drawn-by-leave-trigger"));
+            state.Players[1].Deck.Add(drawn);
+
+            new AbilityResolver().Resolve(state, source, AbilityTiming.OnSummon);
+
+            Assert.That(state.Players[1].Hand, Is.EquivalentTo(new[] { target, drawn }),
+                "The granted leave trigger must resolve before its grant is cleared.");
+            Assert.That(target.Tapped, Is.False);
+            Assert.That(target.EnteredBattleZoneOnTurn, Is.EqualTo(-1));
+            Assert.That(target.TemporaryPowerAttacker, Is.Zero);
+            Assert.That(target.TemporaryPower, Is.Zero);
+            Assert.That(target.TemporaryDoubleBreaker, Is.False);
+            Assert.That(target.TemporaryBreakerCount, Is.Zero);
+            Assert.That(target.TemporaryKeywords, Is.Empty);
+            Assert.That(target.TimedKeywords, Is.Empty);
+            Assert.That(target.TimedRuleAbilities, Is.Empty);
+            Assert.That(target.AttackedThisTurn, Is.False);
+            Assert.That(target.BrokeShieldThisTurn, Is.False);
+            Assert.That(target.ShieldsBrokenInLastAttack, Is.Zero);
+            Assert.That(target.BrokenByAttackerInstanceId, Is.Zero);
+            Assert.That(target.TemporaryRaces, Is.Empty);
+            Assert.That(target.ChosenRace, Is.Empty);
+            Assert.That(target.FaceUp, Is.False);
+            Assert.That(target.WasAttackedThisTurn, Is.False);
+            Assert.That(target.HasChosenCivilization, Is.False);
+        }
+
+        [Test]
+        public void DestroyedEvent_UsesLastKnownTemporaryRaceBeforeZoneReset()
+        {
+            var state = EmptyState();
+            state.ActivePlayerId = 1;
+            var watcherDefinition = Creature("dragon-destruction-watcher");
+            watcherDefinition.RuleAbilities = new[]
+            {
+                new RuleAbilityDefinition("test.watch-destroyed-dragon",
+                    AbilityTiming.OnOtherCreatureDestroyed, AbilityOperation.Draw)
+                {
+                    Amount = 1,
+                    Condition = new AbilityConditionDefinition
+                    {
+                        EventControlledByOpponent = true,
+                        EventCardMatchesFilter = true,
+                        Filter = new CardFilterDefinition
+                        {
+                            CreaturesOnly = true,
+                            Race = "Dragon"
+                        }
+                    }
+                }
+            };
+            var watcher = Instance(10, watcherDefinition);
+            var targetDefinition = Creature("temporary-dragon");
+            targetDefinition.RuleAbilities = new[]
+            {
+                new RuleAbilityDefinition("test.reanimate-before-opponent-trigger",
+                    AbilityTiming.OnDestroyed, AbilityOperation.Move)
+                {
+                    Destination = RuleZone.BattleZone,
+                    Selector = new RuleSelectorDefinition
+                    {
+                        Controller = RuleController.Source,
+                        Zone = RuleZone.Graveyard,
+                        Mode = RuleSelectionMode.SourceCard,
+                        Minimum = 1,
+                        Maximum = 1,
+                        Filter = new CardFilterDefinition { CreaturesOnly = true }
+                    }
+                }
+            };
+            var target = Instance(20, targetDefinition);
+            target.TemporaryRaces.Add("Dragon");
+            var drawn = Instance(30, Creature("drawn-for-dragon"));
+            state.Players[0].BattleZone.Add(watcher);
+            state.Players[1].BattleZone.Add(target);
+            state.Players[0].Deck.Add(Instance(31, Creature("draw-buffer")));
+            state.Players[0].Deck.Add(drawn);
+
+            Assert.That(new AbilityResolver().DestroyCard(state, target), Is.True);
+
+            Assert.That(state.Players[0].Hand, Is.EquivalentTo(new[] { drawn }));
+            Assert.That(state.Players[1].BattleZone, Does.Contain(target),
+                "The active player's destroyed trigger resolves first and reanimates the card.");
+            Assert.That(target.TemporaryRaces, Is.Empty,
+                "Last-known characteristics must expire after the destruction trigger window.");
+        }
+
+        [Test]
+        public void DestroyThenReanimate_ClearsOldObjectStateBeforeBattleZoneEntry()
+        {
+            var state = EmptyState();
+            var targetDefinition = Creature("self-reanimator");
+            targetDefinition.RuleAbilities = new[]
+            {
+                new RuleAbilityDefinition("test.self-reanimate",
+                    AbilityTiming.OnDestroyed, AbilityOperation.Move)
+                {
+                    Destination = RuleZone.BattleZone,
+                    Selector = new RuleSelectorDefinition
+                    {
+                        Controller = RuleController.Source,
+                        Zone = RuleZone.Graveyard,
+                        Mode = RuleSelectionMode.SourceCard,
+                        Minimum = 1,
+                        Maximum = 1,
+                        Filter = new CardFilterDefinition { CreaturesOnly = true }
+                    }
+                }
+            };
+            var target = Instance(20, targetDefinition);
+            target.TemporaryPower = 5000;
+            target.TemporaryKeywords.Add(CardKeyword.SpeedAttacker);
+            target.AttackedThisTurn = true;
+            target.TimedRuleAbilities.Add(new TimedRuleEffect
+            {
+                Ability = new RuleAbilityDefinition("test.stale-entry-draw",
+                    AbilityTiming.OnEnterBattleZone, AbilityOperation.Draw)
+                {
+                    Amount = 1
+                },
+                Duration = AbilityDuration.UntilEndOfTurn,
+                AppliedByPlayerId = 0
+            });
+            state.Players[0].BattleZone.Add(target);
+            state.Players[0].Deck.Add(Instance(30, Creature("must-not-be-drawn")));
+            state.Players[0].Deck.Add(Instance(31, Creature("draw-buffer")));
+
+            Assert.That(new AbilityResolver().DestroyCard(state, target), Is.True);
+
+            Assert.That(state.Players[0].BattleZone, Does.Contain(target));
+            Assert.That(state.Players[0].Graveyard, Does.Not.Contain(target));
+            Assert.That(state.Players[0].Hand, Is.Empty,
+                "A granted ability from the previous object must not trigger after re-entry.");
+            Assert.That(target.TemporaryPower, Is.Zero);
+            Assert.That(target.TemporaryKeywords, Is.Empty);
+            Assert.That(target.TimedRuleAbilities, Is.Empty);
+            Assert.That(target.AttackedThisTurn, Is.False);
+            Assert.That(target.EnteredBattleZoneOnTurn, Is.EqualTo(state.TurnNumber));
+        }
+
+        [Test]
         public void PowerLimitedEffect_UsesCurrentPowerIncludingStaticAuras()
         {
             var state = EmptyState();
@@ -2794,6 +2995,240 @@ namespace CardGame.Core.Tests
             Assert.That(result.Success, Is.True);
             Assert.That(state.Players[1].Graveyard, Does.Contain(existingHand));
             Assert.That(state.Players[1].Hand, Is.EquivalentTo(new[] { drawn }));
+        }
+
+        [Test]
+        public void AttackDeclaration_EndsWhenAttackerLeavesAndReenters()
+        {
+            var state = EmptyState();
+            var attackerDefinition = Creature("reentering-attacker");
+            attackerDefinition.RuleAbilities = new[]
+            {
+                new RuleAbilityDefinition("test.attack-destroy-self",
+                    AbilityTiming.OnAttack, AbilityOperation.Destroy)
+                {
+                    Selector = new RuleSelectorDefinition
+                    {
+                        Controller = RuleController.Source,
+                        Zone = RuleZone.BattleZone,
+                        Mode = RuleSelectionMode.SourceCard,
+                        Minimum = 1,
+                        Maximum = 1,
+                        Filter = new CardFilterDefinition { CreaturesOnly = true }
+                    }
+                },
+                new RuleAbilityDefinition("test.attack-self-reanimate",
+                    AbilityTiming.OnDestroyed, AbilityOperation.Move)
+                {
+                    Destination = RuleZone.BattleZone,
+                    Selector = new RuleSelectorDefinition
+                    {
+                        Controller = RuleController.Source,
+                        Zone = RuleZone.Graveyard,
+                        Mode = RuleSelectionMode.SourceCard,
+                        Minimum = 1,
+                        Maximum = 1,
+                        Filter = new CardFilterDefinition { CreaturesOnly = true }
+                    }
+                },
+                new RuleAbilityDefinition("test.old-attacker-after-attack",
+                    AbilityTiming.AfterAttack, AbilityOperation.Destroy)
+                {
+                    Selector = new RuleSelectorDefinition
+                    {
+                        Controller = RuleController.Source,
+                        Zone = RuleZone.BattleZone,
+                        Mode = RuleSelectionMode.SourceCard,
+                        Minimum = 1,
+                        Maximum = 1,
+                        Filter = new CardFilterDefinition { CreaturesOnly = true }
+                    }
+                }
+            };
+            var attacker = Instance(10, attackerDefinition);
+            attacker.EnteredBattleZoneOnTurn = -1;
+            state.Players[0].BattleZone.Add(attacker);
+            state.Players[1].Shields.Add(Instance(20, Creature("unbroken-shield")));
+
+            var result = new RulesEngine().DeclareAttack(state, 0,
+                attacker.InstanceId, AttackTargetKind.Player);
+
+            Assert.That(result.Success, Is.True);
+            Assert.That(state.PendingAttack, Is.Null,
+                "Leaving the battle zone ends the original attack immediately.");
+            Assert.That(state.Players[0].BattleZone, Does.Contain(attacker));
+            Assert.That(state.Players[0].Graveyard, Does.Not.Contain(attacker));
+            Assert.That(state.Players[1].Shields, Has.Count.EqualTo(1));
+            Assert.That(attacker.EnteredBattleZoneOnTurn, Is.EqualTo(state.TurnNumber));
+            Assert.That(attacker.Tapped, Is.False,
+                "The re-entered card is a new creature, not the tapped attacker.");
+        }
+
+        [Test]
+        public void AttackDeclaration_EndsWhenCreatureTargetLeavesAndReenters()
+        {
+            var state = EmptyState();
+            var attacker = Instance(10, Creature("plain-attacker"));
+            attacker.EnteredBattleZoneOnTurn = -1;
+            var targetDefinition = Creature("reentering-target");
+            targetDefinition.RuleAbilities = new[]
+            {
+                new RuleAbilityDefinition("test.attacked-destroy-self",
+                    AbilityTiming.OnAttacked, AbilityOperation.Destroy)
+                {
+                    Selector = new RuleSelectorDefinition
+                    {
+                        Controller = RuleController.Source,
+                        Zone = RuleZone.BattleZone,
+                        Mode = RuleSelectionMode.SourceCard,
+                        Minimum = 1,
+                        Maximum = 1,
+                        Filter = new CardFilterDefinition { CreaturesOnly = true }
+                    }
+                },
+                new RuleAbilityDefinition("test.target-self-reanimate",
+                    AbilityTiming.OnDestroyed, AbilityOperation.Move)
+                {
+                    Destination = RuleZone.BattleZone,
+                    Selector = new RuleSelectorDefinition
+                    {
+                        Controller = RuleController.Source,
+                        Zone = RuleZone.Graveyard,
+                        Mode = RuleSelectionMode.SourceCard,
+                        Minimum = 1,
+                        Maximum = 1,
+                        Filter = new CardFilterDefinition { CreaturesOnly = true }
+                    }
+                }
+            };
+            var target = Instance(20, targetDefinition);
+            target.Tapped = true;
+            state.Players[0].BattleZone.Add(attacker);
+            state.Players[1].BattleZone.Add(target);
+
+            var result = new RulesEngine().DeclareAttack(state, 0,
+                attacker.InstanceId, AttackTargetKind.Creature, target.InstanceId);
+
+            Assert.That(result.Success, Is.True);
+            Assert.That(state.PendingAttack, Is.Null);
+            Assert.That(state.Players[1].BattleZone, Does.Contain(target));
+            Assert.That(state.Players[1].Graveyard, Does.Not.Contain(target));
+            Assert.That(target.Tapped, Is.False);
+        }
+
+        [Test]
+        public void Slayer_DoesNotDestroyCreatureThatReenteredAfterBattleLoss()
+        {
+            var state = EmptyState();
+            var attackerDefinition = Creature("winning-slayer");
+            attackerDefinition.Power = 5000;
+            attackerDefinition.Abilities = new[]
+                { new KeywordAbility(CardKeyword.Slayer) };
+            var defenderDefinition = Creature("battle-self-reanimator");
+            defenderDefinition.Power = 1000;
+            defenderDefinition.RuleAbilities = new[]
+            {
+                new RuleAbilityDefinition("test.battle-self-reanimate",
+                    AbilityTiming.OnDestroyed, AbilityOperation.Move)
+                {
+                    Destination = RuleZone.BattleZone,
+                    Selector = new RuleSelectorDefinition
+                    {
+                        Controller = RuleController.Source,
+                        Zone = RuleZone.Graveyard,
+                        Mode = RuleSelectionMode.SourceCard,
+                        Minimum = 1,
+                        Maximum = 1,
+                        Filter = new CardFilterDefinition { CreaturesOnly = true }
+                    }
+                }
+            };
+            var attacker = Instance(10, attackerDefinition);
+            var defender = Instance(20, defenderDefinition);
+            attacker.EnteredBattleZoneOnTurn = -1;
+            defender.Tapped = true;
+            state.Players[0].BattleZone.Add(attacker);
+            state.Players[1].BattleZone.Add(defender);
+            var engine = new RulesEngine();
+
+            Assert.That(engine.DeclareAttack(state, 0, attacker.InstanceId,
+                AttackTargetKind.Creature, defender.InstanceId).Success, Is.True);
+            Assert.That(engine.DeclineBlockAndResolve(state, 1).Success, Is.True);
+
+            Assert.That(state.Players[1].BattleZone, Does.Contain(defender));
+            Assert.That(state.Players[1].Graveyard, Does.Not.Contain(defender),
+                "Slayer targets the old creature that battled, not its new incarnation.");
+        }
+
+        [Test]
+        public void ScheduledAfterBattleUntap_DoesNotAffectReenteredBlocker()
+        {
+            var state = EmptyState();
+            var attackerDefinition = Creature("strong-attacker");
+            attackerDefinition.Power = 5000;
+            var blockerDefinition = Creature("reentering-blocker");
+            blockerDefinition.Power = 1000;
+            blockerDefinition.Abilities = new[]
+                { new KeywordAbility(CardKeyword.Blocker) };
+            blockerDefinition.RuleAbilities = new[]
+            {
+                new RuleAbilityDefinition("test.schedule-old-blocker-untap",
+                    AbilityTiming.OnBlock,
+                    AbilityOperation.ScheduleSelectedUntapAfterBattle)
+                {
+                    Selector = new RuleSelectorDefinition
+                    {
+                        Controller = RuleController.Source,
+                        Zone = RuleZone.BattleZone,
+                        Mode = RuleSelectionMode.SourceCard,
+                        Minimum = 1,
+                        Maximum = 1,
+                        Filter = new CardFilterDefinition { CreaturesOnly = true }
+                    }
+                },
+                new RuleAbilityDefinition("test.blocker-self-reanimate",
+                    AbilityTiming.OnDestroyed, AbilityOperation.Move)
+                {
+                    Destination = RuleZone.BattleZone,
+                    Selector = new RuleSelectorDefinition
+                    {
+                        Controller = RuleController.Source,
+                        Zone = RuleZone.Graveyard,
+                        Mode = RuleSelectionMode.SourceCard,
+                        Minimum = 1,
+                        Maximum = 1,
+                        Filter = new CardFilterDefinition { CreaturesOnly = true }
+                    }
+                },
+                new RuleAbilityDefinition("test.reentered-blocker-is-tapped",
+                    AbilityTiming.Static, AbilityOperation.ForceEnterTapped)
+                {
+                    Selector = new RuleSelectorDefinition
+                    {
+                        Controller = RuleController.Source,
+                        Zone = RuleZone.BattleZone,
+                        Mode = RuleSelectionMode.SourceCard,
+                        Minimum = 1,
+                        Maximum = 1,
+                        Filter = new CardFilterDefinition { CreaturesOnly = true }
+                    }
+                }
+            };
+            var attacker = Instance(10, attackerDefinition);
+            var blocker = Instance(20, blockerDefinition);
+            attacker.EnteredBattleZoneOnTurn = -1;
+            state.Players[0].BattleZone.Add(attacker);
+            state.Players[1].BattleZone.Add(blocker);
+            state.Players[1].Shields.Add(Instance(30, Creature("shield")));
+            var engine = new RulesEngine();
+
+            Assert.That(engine.DeclareAttack(state, 0, attacker.InstanceId,
+                AttackTargetKind.Player).Success, Is.True);
+            Assert.That(engine.Block(state, 1, blocker.InstanceId).Success, Is.True);
+
+            Assert.That(state.Players[1].BattleZone, Does.Contain(blocker));
+            Assert.That(blocker.Tapped, Is.True,
+                "The scheduled untap belongs to the blocker that left, not the new creature.");
         }
 
         [Test]

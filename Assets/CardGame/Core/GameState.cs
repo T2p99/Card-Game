@@ -58,10 +58,35 @@ namespace CardGame.Core
     }
 
     [Serializable]
+    public sealed class CardIncarnationReference
+    {
+        public CardInstance Card;
+        public int ZoneChangeVersion;
+
+        public CardIncarnationReference()
+        {
+        }
+
+        public CardIncarnationReference(CardInstance card)
+        {
+            Card = card;
+            ZoneChangeVersion = card?.ZoneChangeVersion ?? -1;
+        }
+
+        public bool Matches(CardInstance card) => card != null && Card == card &&
+            card.ZoneChangeVersion == ZoneChangeVersion;
+    }
+
+    [Serializable]
     public sealed class CardInstance
     {
         public long InstanceId;
         public CardDefinition Definition = new CardDefinition();
+        // A physical card can be represented by the same CardInstance for the
+        // whole match, but every zone change creates a new game object. Combat
+        // references record this value so a card that leaves and re-enters the
+        // battle zone cannot be mistaken for its previous incarnation.
+        public int ZoneChangeVersion;
         public bool Tapped;
         public int EnteredBattleZoneOnTurn = -1;
         public int TemporaryPowerAttacker;
@@ -87,6 +112,35 @@ namespace CardGame.Core
 
         public bool HasKeyword(CardKeyword keyword) =>
             Definition.HasKeyword(keyword) || TemporaryKeywords.Contains(keyword);
+
+        /// <summary>
+        /// Clears state that belongs to one appearance of this card in a zone.
+        /// CardInstance objects are reused by the simulation, but a card that
+        /// changes zones must not carry temporary effects or combat history into
+        /// its new game object.
+        /// </summary>
+        internal void ResetTransientZoneState(bool clearShieldBreakContext = true)
+        {
+            ZoneChangeVersion = unchecked(ZoneChangeVersion + 1);
+            EnteredBattleZoneOnTurn = -1;
+            TemporaryPowerAttacker = 0;
+            TemporaryPower = 0;
+            TemporaryDoubleBreaker = false;
+            TemporaryBreakerCount = 0;
+            TemporaryKeywords.Clear();
+            TimedKeywords.Clear();
+            TimedRuleAbilities.Clear();
+            AttackedThisTurn = false;
+            BrokeShieldThisTurn = false;
+            ShieldsBrokenInLastAttack = 0;
+            if (clearShieldBreakContext) BrokenByAttackerInstanceId = 0;
+            TemporaryRaces.Clear();
+            ChosenRace = string.Empty;
+            FaceUp = false;
+            WasAttackedThisTurn = false;
+            ChosenCivilization = default;
+            HasChosenCivilization = false;
+        }
     }
 
     [Serializable]
@@ -106,8 +160,10 @@ namespace CardGame.Core
     public sealed class PendingAttack
     {
         public long AttackerInstanceId;
+        public int AttackerZoneChangeVersion;
         public AttackTargetKind TargetKind;
         public long TargetCreatureInstanceId;
+        public int TargetCreatureZoneChangeVersion = -1;
         public int DefendingPlayerId;
     }
 
@@ -151,8 +207,10 @@ namespace CardGame.Core
         public long CurrentBlockerInstanceId;
         public long RequiredBlockerInstanceId;
         public int[] ForcedLossOwnTurnEndsRemaining = new int[2];
-        public List<CardInstance> UntapAfterCurrentBattle = new List<CardInstance>();
-        public List<CardInstance> DestroyAfterCurrentBattle = new List<CardInstance>();
+        public List<CardIncarnationReference> UntapAfterCurrentBattle =
+            new List<CardIncarnationReference>();
+        public List<CardIncarnationReference> DestroyAfterCurrentBattle =
+            new List<CardIncarnationReference>();
         public List<PlayerCivilizationEffect> PreventOpponentAttackCivilizationsUntilNextTurn =
             new List<PlayerCivilizationEffect>();
 

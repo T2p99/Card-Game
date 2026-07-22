@@ -1,3 +1,4 @@
+using System;
 using System.Linq;
 using NUnit.Framework;
 
@@ -49,6 +50,39 @@ namespace CardGame.Core.Tests
         public void Catalog_AllCardRulesAreComplete()
         {
             Assert.That(TcgCatalog.Unfinished, Is.Empty);
+        }
+
+        [Test]
+        public void RandomDeckFromOneSet_IsLegalAndUsesOnlyThatSet()
+        {
+            var deck = TcgCatalog.BuildRandomDeckFromSets(new[] { "DM-01" }, seed: 2004);
+
+            Assert.That(deck.Count, Is.EqualTo(40));
+            Assert.That(deck.All(card => card.SetCode == "DM-01"), Is.True);
+            Assert.That(deck.GroupBy(card => card.Name, StringComparer.OrdinalIgnoreCase)
+                .Max(group => group.Count()), Is.LessThanOrEqualTo(4));
+        }
+
+        [Test]
+        public void RandomDeckFromMultipleSets_IsDeterministicAndStaysInSelectedPool()
+        {
+            var selectedSets = new[] { "DM-01", "DM-02", "PROMO" };
+            var first = TcgCatalog.BuildRandomDeckFromSets(selectedSets, seed: 8675309);
+            var repeated = TcgCatalog.BuildRandomDeckFromSets(selectedSets.Reverse(), seed: 8675309);
+            var different = TcgCatalog.BuildRandomDeckFromSets(selectedSets, seed: 8675310);
+
+            Assert.That(first.Select(card => card.Id), Is.EqualTo(repeated.Select(card => card.Id)));
+            Assert.That(first.All(card => selectedSets.Contains(card.SetCode)), Is.True);
+            Assert.That(first.Select(card => card.Id), Is.Not.EqualTo(different.Select(card => card.Id)));
+        }
+
+        [Test]
+        public void RandomDeckFromSets_RejectsMissingOrUnknownSelection()
+        {
+            Assert.That(() => TcgCatalog.BuildRandomDeckFromSets(Array.Empty<string>(), seed: 1),
+                Throws.ArgumentException.With.Message.Contains("at least one"));
+            Assert.That(() => TcgCatalog.BuildRandomDeckFromSets(new[] { "DM-99" }, seed: 1),
+                Throws.ArgumentException.With.Message.Contains("DM-99"));
         }
     }
 }
