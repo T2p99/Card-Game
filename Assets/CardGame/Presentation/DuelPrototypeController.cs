@@ -176,8 +176,12 @@ namespace CardGame.Presentation
             }
 
             DrawHeader();
-            DrawBoard();
-            DrawControlPanel();
+            var modalWasOpen = _showHandCardViewer || _showVideo;
+            if (!modalWasOpen)
+            {
+                DrawBoard();
+                DrawControlPanel();
+            }
 
             if (_showHandCardViewer) DrawCardViewer();
             if (_showVideo) DrawVideoOverlay();
@@ -709,8 +713,15 @@ namespace CardGame.Presentation
                 var mana = player.Mana[i];
                 var cardRect = new Rect(startX + i * (cardWidth + 7f), 0f, cardWidth, cardHeight);
                 GUI.backgroundColor = CivilizationColor(mana.Definition);
-                if (GUI.Button(cardRect, GUIContent.none) && !_showHandCardViewer && !_showVideo)
-                    OpenFaceUpCardViewer(mana, player.Mana, label);
+                if (!_showHandCardViewer && !_showVideo)
+                {
+                    if (GUI.Button(cardRect, GUIContent.none))
+                        OpenFaceUpCardViewer(mana, player.Mana, label);
+                }
+                else
+                {
+                    GUI.Box(cardRect, GUIContent.none);
+                }
 
                 var artRect = new Rect(cardRect.x + 3f, cardRect.y + 3f, cardRect.width - 6f, cardRect.height - 6f);
                 if (_cardArt.TryGetValue(mana.Definition.Id, out var texture))
@@ -772,10 +783,17 @@ namespace CardGame.Presentation
             bool allowWhileViewerOpen = false)
         {
             GUI.backgroundColor = selected ? new Color(1f, 0.75f, 0.15f) : CivilizationColor(card.Definition);
-            if (GUI.Button(rect, GUIContent.none) &&
-                (allowWhileViewerOpen || !_showHandCardViewer) &&
-                !_showVideo)
-                clicked();
+            var acceptsInput = !_showVideo && (allowWhileViewerOpen || !_showHandCardViewer);
+            if (acceptsInput)
+            {
+                if (GUI.Button(rect, GUIContent.none)) clicked();
+            }
+            else
+            {
+                // A disabled button can still claim the IMGUI mouse event before the modal viewer is drawn.
+                // Render a passive frame so the viewer's Mana Zone/Battle Zone controls receive the click.
+                GUI.Box(rect, GUIContent.none);
+            }
 
             var previousMatrix = GUI.matrix;
             var inset = new Rect(rect.x + 4, rect.y + 4, rect.width - 8, rect.height - 8);
