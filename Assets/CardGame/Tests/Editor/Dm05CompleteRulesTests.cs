@@ -112,7 +112,7 @@ namespace CardGame.Core.Tests
             new AbilityResolver().Resolve(state, enemySource, AbilityTiming.OnSummon);
 
             Assert.That(state.Players[0].Mana, Does.Contain(manaCard));
-            Assert.That(state.Players[0].Graveyard, Does.Not.Contain(manaCard));
+            Assert.That(state.Players[0].Graveyard, Has.No.Member(manaCard));
         }
 
         [Test]

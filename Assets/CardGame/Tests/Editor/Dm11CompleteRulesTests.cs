@@ -248,9 +248,9 @@ namespace CardGame.Core.Tests
                 state, totem, AbilityTiming.SilentSkill);
 
             Assert.That(used, Is.True);
-            Assert.That(state.Players[0].Mana, Does.Not.Contain(evolution));
+            Assert.That(state.Players[0].Mana, Has.No.Member(evolution));
             Assert.That(state.Players[0].BattleZone, Does.Contain(evolution));
-            Assert.That(state.Players[0].BattleZone, Does.Not.Contain(evolutionBase));
+            Assert.That(state.Players[0].BattleZone, Has.No.Member(evolutionBase));
             Assert.That(evolution.EvolutionMaterials,
                 Is.EquivalentTo(new[] { evolutionBase }));
         }
@@ -296,7 +296,7 @@ namespace CardGame.Core.Tests
             Assert.That(state.Players[1].Graveyard, Does.Contain(victim));
             Assert.That(state.Players[0].BattleZone, Does.Contain(recruit));
             Assert.That(state.Players[0].Deck, Does.Contain(wrongCost));
-            Assert.That(state.Players[1].BattleZone, Does.Not.Contain(recruit));
+            Assert.That(state.Players[1].BattleZone, Has.No.Member(recruit));
         }
 
         [Test]

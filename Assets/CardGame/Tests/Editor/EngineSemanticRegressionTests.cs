@@ -542,7 +542,7 @@ namespace CardGame.Core.Tests
             target.TimedRuleAbilities.Add(new TimedRuleEffect
             {
                 Ability = new RuleAbilityDefinition("test.stale-entry-draw",
-                    AbilityTiming.OnEnterBattleZone, AbilityOperation.Draw)
+                    AbilityTiming.OnSummon, AbilityOperation.Draw)
                 {
                     Amount = 1
                 },
@@ -556,7 +556,7 @@ namespace CardGame.Core.Tests
             Assert.That(new AbilityResolver().DestroyCard(state, target), Is.True);
 
             Assert.That(state.Players[0].BattleZone, Does.Contain(target));
-            Assert.That(state.Players[0].Graveyard, Does.Not.Contain(target));
+            Assert.That(state.Players[0].Graveyard, Has.No.Member(target));
             Assert.That(state.Players[0].Hand, Is.Empty,
                 "A granted ability from the previous object must not trigger after re-entry.");
             Assert.That(target.TemporaryPower, Is.Zero);
@@ -805,9 +805,9 @@ namespace CardGame.Core.Tests
 
             new AbilityResolver().Resolve(state, spell, AbilityTiming.OnCast);
 
-            Assert.That(state.Players[0].Hand, Does.Not.Contain(evolution));
+            Assert.That(state.Players[0].Hand, Has.No.Member(evolution));
             Assert.That(state.Players[0].BattleZone, Does.Contain(evolution));
-            Assert.That(state.Players[0].BattleZone, Does.Not.Contain(evolutionBase));
+            Assert.That(state.Players[0].BattleZone, Has.No.Member(evolutionBase));
             Assert.That(evolution.EvolutionMaterials, Is.EquivalentTo(new[] { evolutionBase }));
             Assert.That(evolution.Tapped, Is.True);
             Assert.That(evolution.EnteredBattleZoneOnTurn, Is.EqualTo(-1));
@@ -830,7 +830,7 @@ namespace CardGame.Core.Tests
             new AbilityResolver().Resolve(state, spell, AbilityTiming.OnCast);
 
             Assert.That(state.Players[0].Hand, Does.Contain(evolution));
-            Assert.That(state.Players[0].BattleZone, Does.Not.Contain(evolution));
+            Assert.That(state.Players[0].BattleZone, Has.No.Member(evolution));
         }
 
         [Test]
@@ -1155,7 +1155,7 @@ namespace CardGame.Core.Tests
 
             new AbilityResolver().Resolve(state, ogrist, AbilityTiming.OnSummon);
 
-            Assert.That(state.Players[0].BattleZone, Does.Not.Contain(ogrist));
+            Assert.That(state.Players[0].BattleZone, Has.No.Member(ogrist));
             Assert.That(state.Players[0].Graveyard, Does.Contain(ogrist));
         }
 
@@ -1699,7 +1699,7 @@ namespace CardGame.Core.Tests
 
             Assert.That(new AbilityResolver().DestroyCard(state, target), Is.False);
             Assert.That(state.Players[0].Hand, Does.Contain(target));
-            Assert.That(state.Players[0].BattleZone, Does.Not.Contain(target));
+            Assert.That(state.Players[0].BattleZone, Has.No.Member(target));
         }
 
         [Test]
@@ -1744,7 +1744,7 @@ namespace CardGame.Core.Tests
 
             Assert.That(new AbilityResolver().DestroyCard(state, target), Is.False);
             Assert.That(state.Players[0].BattleZone, Does.Contain(target));
-            Assert.That(state.Players[0].Hand, Does.Not.Contain(target));
+            Assert.That(state.Players[0].Hand, Has.No.Member(target));
         }
 
         [Test]
@@ -1792,7 +1792,7 @@ namespace CardGame.Core.Tests
             Assert.That(resolver.DestroyCard(state, target), Is.False);
 
             Assert.That(state.Players[0].Hand, Does.Contain(target));
-            Assert.That(state.Players[0].Mana, Does.Not.Contain(target));
+            Assert.That(state.Players[0].Mana, Has.No.Member(target));
         }
 
         [Test]
@@ -2854,7 +2854,7 @@ namespace CardGame.Core.Tests
             new AbilityResolver().Resolve(state, source, AbilityTiming.OnSummon);
 
             Assert.That(state.Players[1].Mana, Does.Contain(opposingMana));
-            Assert.That(state.Players[1].Graveyard, Does.Not.Contain(opposingMana),
+            Assert.That(state.Players[1].Graveyard, Has.No.Member(opposingMana),
                 "The active player's effect caused the move even though the nonactive player chose their card.");
         }
 
@@ -2902,7 +2902,7 @@ namespace CardGame.Core.Tests
             new AbilityResolver().Resolve(state, source, AbilityTiming.OnSummon);
 
             Assert.That(state.Players[1].BattleZone, Does.Contain(replacement));
-            Assert.That(state.Players[1].Graveyard, Does.Not.Contain(replacement));
+            Assert.That(state.Players[1].Graveyard, Has.No.Member(replacement));
         }
 
         [Test]
@@ -3057,7 +3057,7 @@ namespace CardGame.Core.Tests
             Assert.That(state.PendingAttack, Is.Null,
                 "Leaving the battle zone ends the original attack immediately.");
             Assert.That(state.Players[0].BattleZone, Does.Contain(attacker));
-            Assert.That(state.Players[0].Graveyard, Does.Not.Contain(attacker));
+            Assert.That(state.Players[0].Graveyard, Has.No.Member(attacker));
             Assert.That(state.Players[1].Shields, Has.Count.EqualTo(1));
             Assert.That(attacker.EnteredBattleZoneOnTurn, Is.EqualTo(state.TurnNumber));
             Assert.That(attacker.Tapped, Is.False,
@@ -3112,7 +3112,7 @@ namespace CardGame.Core.Tests
             Assert.That(result.Success, Is.True);
             Assert.That(state.PendingAttack, Is.Null);
             Assert.That(state.Players[1].BattleZone, Does.Contain(target));
-            Assert.That(state.Players[1].Graveyard, Does.Not.Contain(target));
+            Assert.That(state.Players[1].Graveyard, Has.No.Member(target));
             Assert.That(target.Tapped, Is.False);
         }
 
@@ -3156,7 +3156,7 @@ namespace CardGame.Core.Tests
             Assert.That(engine.DeclineBlockAndResolve(state, 1).Success, Is.True);
 
             Assert.That(state.Players[1].BattleZone, Does.Contain(defender));
-            Assert.That(state.Players[1].Graveyard, Does.Not.Contain(defender),
+            Assert.That(state.Players[1].Graveyard, Has.No.Member(defender),
                 "Slayer targets the old creature that battled, not its new incarnation.");
         }
 
@@ -3928,11 +3928,12 @@ namespace CardGame.Core.Tests
             RandomSeed = 42
         };
 
-        private static CardDefinition Creature(string id) => new CardDefinition
+        private static CardDefinition Creature(string id,
+            Civilization civilization = Civilization.Fire) => new CardDefinition
         {
             Id = id,
             Name = id,
-            Civilizations = new[] { Civilization.Fire },
+            Civilizations = new[] { civilization },
             Cost = 1,
             Type = CardType.Creature,
             Races = new[] { "Test" },

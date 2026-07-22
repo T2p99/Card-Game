@@ -192,7 +192,7 @@ namespace CardGame.Core.Tests
             new AbilityResolver().ResolveGlobalEvent(state, evolution,
                 AbilityTiming.OnAnyCreatureEvolved, true);
 
-            Assert.That(state.Players[0].BattleZone, Does.Not.Contain(locust));
+            Assert.That(state.Players[0].BattleZone, Has.No.Member(locust));
             Assert.That(state.Players[0].Graveyard, Does.Contain(locust));
         }
 
@@ -260,7 +260,7 @@ namespace CardGame.Core.Tests
             new AbilityResolver().Resolve(state, pegasus, AbilityTiming.OnAttack);
 
             Assert.That(state.Players[0].BattleZone, Does.Contain(topCreature));
-            Assert.That(state.Players[0].Hand, Does.Not.Contain(topCreature));
+            Assert.That(state.Players[0].Hand, Has.No.Member(topCreature));
         }
 
         [Test]

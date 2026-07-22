@@ -133,7 +133,7 @@ namespace CardGame.Core.Tests
             new AbilityResolver().Resolve(state, discardSource, AbilityTiming.OnSummon);
 
             Assert.That(state.Players[0].BattleZone, Does.Contain(davaTorey));
-            Assert.That(state.Players[0].Graveyard, Does.Not.Contain(davaTorey));
+            Assert.That(state.Players[0].Graveyard, Has.No.Member(davaTorey));
         }
 
         [Test]

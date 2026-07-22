@@ -63,7 +63,7 @@ namespace CardGame.Presentation
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Bootstrap()
         {
-            if (FindFirstObjectByType<DuelPrototypeController>() != null) return;
+            if (FindAnyObjectByType<DuelPrototypeController>() != null) return;
             var host = new GameObject("Duel Prototype");
             DontDestroyOnLoad(host);
             host.AddComponent<DuelPrototypeController>();

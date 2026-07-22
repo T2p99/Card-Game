@@ -112,7 +112,7 @@ namespace CardGame.Core.Tests
             resolver.DestroyCard(state, laterCreature);
 
             Assert.That(state.Players[0].Mana, Does.Contain(laterCreature));
-            Assert.That(state.Players[0].Graveyard, Does.Not.Contain(laterCreature));
+            Assert.That(state.Players[0].Graveyard, Has.No.Member(laterCreature));
         }
 
         [Test]

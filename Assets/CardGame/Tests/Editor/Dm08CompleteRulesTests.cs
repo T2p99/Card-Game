@@ -31,7 +31,7 @@ namespace CardGame.Core.Tests
 
             Assert.That(result.Success, Is.True);
             Assert.That(state.Players[1].Hand, Does.Contain(trigger));
-            Assert.That(state.Players[1].Graveyard, Does.Not.Contain(trigger));
+            Assert.That(state.Players[1].Graveyard, Has.No.Member(trigger));
         }
 
         [Test]
@@ -54,8 +54,8 @@ namespace CardGame.Core.Tests
 
             Assert.That(result.Success, Is.True);
             Assert.That(state.Players[1].Mana, Does.Contain(trigger));
-            Assert.That(state.Players[1].Hand, Does.Not.Contain(trigger));
-            Assert.That(state.Players[1].Graveyard, Does.Not.Contain(trigger));
+            Assert.That(state.Players[1].Hand, Has.No.Member(trigger));
+            Assert.That(state.Players[1].Graveyard, Has.No.Member(trigger));
         }
 
         [Test]

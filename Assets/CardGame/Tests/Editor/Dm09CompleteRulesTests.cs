@@ -55,7 +55,7 @@ namespace CardGame.Core.Tests
             resolver.DestroyCard(state, laterBeast);
 
             Assert.That(state.Players[0].Hand, Does.Contain(laterBeast));
-            Assert.That(state.Players[0].Graveyard, Does.Not.Contain(laterBeast));
+            Assert.That(state.Players[0].Graveyard, Has.No.Member(laterBeast));
         }
 
         [Test]

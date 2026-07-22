@@ -139,7 +139,7 @@ namespace CardGame.Core.Tests
             new AbilityResolver().ResolveGlobalEvent(state, dragon,
                 AbilityTiming.OnAnyCreatureAttack, true);
 
-            Assert.That(state.Players[1].BattleZone, Does.Not.Contain(target));
+            Assert.That(state.Players[1].BattleZone, Has.No.Member(target));
             Assert.That(state.Players[1].Mana, Does.Contain(target));
         }
 

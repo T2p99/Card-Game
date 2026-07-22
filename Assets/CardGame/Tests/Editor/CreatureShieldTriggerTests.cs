@@ -20,7 +20,7 @@ namespace CardGame.Core.Tests
             Assert.That(result.Success, Is.True, result.Error);
             Assert.That(state.Players[1].BattleZone, Does.Contain(surfer));
             Assert.That(state.Players[0].Hand, Does.Contain(target));
-            Assert.That(state.PendingShieldTriggers, Does.Not.Contain(surfer));
+            Assert.That(state.PendingShieldTriggers, Has.No.Member(surfer));
         }
 
         [Test]

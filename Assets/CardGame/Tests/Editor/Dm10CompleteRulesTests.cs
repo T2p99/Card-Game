@@ -180,7 +180,7 @@ namespace CardGame.Core.Tests
 
             Assert.That(state.Players[0].Deck, Does.Contain(ryudmila));
             Assert.That(state.Players[0].Hand, Does.Contain(recruit));
-            Assert.That(state.Players[0].BattleZone, Does.Not.Contain(recruit));
+            Assert.That(state.Players[0].BattleZone, Has.No.Member(recruit));
         }
 
         [Test]
@@ -198,7 +198,7 @@ namespace CardGame.Core.Tests
 
             Assert.That(state.Players[0].Deck, Does.Contain(ryudmila));
             Assert.That(state.Players[0].Deck, Does.Contain(recruit));
-            Assert.That(state.Players[0].BattleZone, Does.Not.Contain(recruit));
+            Assert.That(state.Players[0].BattleZone, Has.No.Member(recruit));
         }
 
         [Test]
@@ -234,7 +234,7 @@ namespace CardGame.Core.Tests
             resolver.DestroyCard(state, silent);
 
             Assert.That(state.Players[0].Hand, Does.Contain(silent));
-            Assert.That(state.Players[0].Graveyard, Does.Not.Contain(silent));
+            Assert.That(state.Players[0].Graveyard, Has.No.Member(silent));
         }
 
         [Test]
