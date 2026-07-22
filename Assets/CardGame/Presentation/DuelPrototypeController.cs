@@ -41,6 +41,7 @@ namespace CardGame.Presentation
         private readonly HashSet<Civilization> _computerSelectedCivilizations =
             new HashSet<Civilization>(SelectableCivilizations);
         private long _selectedEvolutionBaseId;
+        private long _selectedSpellTargetId;
         private Texture2D _cardBack;
 
         private RulesEngine _engine;
@@ -57,6 +58,7 @@ namespace CardGame.Presentation
         private Vector2 _humanManaScroll;
         private Vector2 _computerManaScroll;
         private Vector2 _manaSelectionScroll;
+        private Vector2 _spellTargetScroll;
         private Vector2 _battleActionScroll;
         private string _message = "Choose a card, charge mana, and summon a creature.";
         private string _viewerMessage = string.Empty;
@@ -399,12 +401,14 @@ namespace CardGame.Presentation
                 _selectingManaPayment = false;
                 _selectedManaIds.Clear();
                 _selectedEvolutionBaseId = 0;
+                _selectedSpellTargetId = 0;
                 _handScroll = Vector2.zero;
                 _humanBattleScroll = Vector2.zero;
                 _computerBattleScroll = Vector2.zero;
                 _humanManaScroll = Vector2.zero;
                 _computerManaScroll = Vector2.zero;
                 _manaSelectionScroll = Vector2.zero;
+                _spellTargetScroll = Vector2.zero;
                 _battleActionScroll = Vector2.zero;
                 _artRequests.Clear();
                 StartCoroutine(PreloadDeckArt(humanDeck.Concat(computerDeck).ToArray()));
@@ -450,6 +454,7 @@ namespace CardGame.Presentation
             _selectedHand = null;
             _selectedCreature = null;
             _selectedOpponentCreature = null;
+            _selectedSpellTargetId = 0;
             _showDeckSetup = true;
             _setupMessage = "Change either set/civilization pool, then build two newly randomized decks.";
         }
@@ -945,7 +950,7 @@ namespace CardGame.Presentation
             }
 
             GUILayout.FlexibleSpace();
-            GUILayout.Label("Prototype: hand cards use manual mana selection. Spell targeting is currently automatic.");
+            GUILayout.Label("Prototype: hand cards use manual mana selection. Single-card spell targets are chosen in the card viewer.");
             GUILayout.EndArea();
         }
 
@@ -953,7 +958,6 @@ namespace CardGame.Presentation
         {
             _selectedHand = card;
             _selectedCreature = null;
-            _selectedOpponentCreature = null;
             _showHandCardViewer = true;
             _viewerCards = _state.Players[HumanId].Hand;
             _viewerZoneName = "Your Hand";
@@ -961,6 +965,7 @@ namespace CardGame.Presentation
             _selectingManaPayment = false;
             _selectedManaIds.Clear();
             _selectedEvolutionBaseId = 0;
+            _selectedSpellTargetId = 0;
             _viewerMessage = string.Empty;
         }
 
@@ -974,6 +979,7 @@ namespace CardGame.Presentation
             _selectingManaPayment = false;
             _selectedManaIds.Clear();
             _selectedEvolutionBaseId = 0;
+            _selectedSpellTargetId = 0;
             _viewerMessage = card.Tapped ? "This card is currently turned." : string.Empty;
         }
 
@@ -987,6 +993,7 @@ namespace CardGame.Presentation
             _selectingManaPayment = false;
             _selectedManaIds.Clear();
             _selectedEvolutionBaseId = 0;
+            _selectedSpellTargetId = 0;
             _viewerMessage = string.Empty;
             if (!wasHandViewer) _selectedHand = null;
         }
@@ -1009,6 +1016,7 @@ namespace CardGame.Presentation
             _selectingManaPayment = false;
             _selectedManaIds.Clear();
             _selectedEvolutionBaseId = 0;
+            _selectedSpellTargetId = 0;
             _viewerMessage = string.Empty;
         }
 
@@ -1171,6 +1179,19 @@ namespace CardGame.Presentation
         {
             _selectedManaIds.Clear();
             _selectedEvolutionBaseId = 0;
+            _selectedSpellTargetId = 0;
+            _spellTargetScroll = Vector2.zero;
+            if (_selectedHand.Definition.Type == CardType.Spell &&
+                _engine.SpellUsesSingleCardTarget(_selectedHand.Definition))
+            {
+                var candidates = _engine.GetSpellTargetCandidates(_state, HumanId,
+                    _selectedHand.InstanceId);
+                if (_selectedOpponentCreature != null &&
+                    candidates.Contains(_selectedOpponentCreature))
+                    _selectedSpellTargetId = _selectedOpponentCreature.InstanceId;
+                else if (candidates.Count == 1)
+                    _selectedSpellTargetId = candidates[0].InstanceId;
+            }
             _selectingManaPayment = true;
             _viewerMessage = _selectedHand.Definition.Cost == 0
                 ? "This card costs no mana. Confirm to play it."
@@ -1183,6 +1204,62 @@ namespace CardGame.Presentation
             var cost = _selectedHand.Definition.Cost;
             var isEvolution = _selectedHand.Definition.Type == CardType.EvolutionCreature;
             var manaTop = area.y;
+            var spellUsesTarget = _selectedHand.Definition.Type == CardType.Spell &&
+                                  _engine.SpellUsesSingleCardTarget(
+                                      _selectedHand.Definition);
+            var spellRequiresTarget = spellUsesTarget &&
+                                      _engine.SpellRequiresSingleCardTarget(
+                                          _selectedHand.Definition);
+            IReadOnlyList<CardInstance> spellTargets = Array.Empty<CardInstance>();
+
+            if (spellUsesTarget)
+            {
+                spellTargets = _engine.GetSpellTargetCandidates(_state, HumanId,
+                    _selectedHand.InstanceId);
+                if (_selectedSpellTargetId != 0 && !spellTargets.Any(card =>
+                        card.InstanceId == _selectedSpellTargetId))
+                    _selectedSpellTargetId = 0;
+
+                var targetText = spellTargets.Count == 0
+                    ? "No legal target is currently available."
+                    : _selectedSpellTargetId == 0
+                        ? "Choose the card this spell will affect. Turned creatures are valid unless the printed rule says otherwise."
+                        : $"Target: {spellTargets.First(card => card.InstanceId == _selectedSpellTargetId).Definition.Name}";
+                GUI.Label(new Rect(area.x, manaTop, area.width, 42f), targetText);
+
+                var targetViewport = new Rect(area.x, manaTop + 44f, area.width, 104f);
+                GUI.Box(targetViewport, GUIContent.none);
+                const float targetSlotWidth = 108f;
+                const float targetSlotHeight = 84f;
+                var targetContent = new Rect(0f, 0f,
+                    Mathf.Max(targetViewport.width - 18f,
+                        spellTargets.Count * targetSlotWidth), targetSlotHeight);
+                _spellTargetScroll = GUI.BeginScrollView(targetViewport,
+                    _spellTargetScroll, targetContent);
+                for (var i = 0; i < spellTargets.Count; i++)
+                {
+                    var target = spellTargets[i];
+                    var slot = new Rect(i * targetSlotWidth, 0f,
+                        targetSlotWidth - 8f, targetSlotHeight);
+                    var uprightWidth = targetSlotHeight * 0.67f;
+                    var targetRect = target.Tapped
+                        ? new Rect(slot.x + 4f,
+                            slot.center.y - uprightWidth * 0.5f,
+                            targetSlotHeight, uprightWidth)
+                        : new Rect(slot.center.x - uprightWidth * 0.5f,
+                            slot.y, uprightWidth, targetSlotHeight);
+                    DrawCardButton(target, targetRect,
+                        _selectedSpellTargetId == target.InstanceId, false, () =>
+                        {
+                            _selectedSpellTargetId = target.InstanceId;
+                            if (_state.Players[ComputerId].BattleZone.Contains(target))
+                                _selectedOpponentCreature = target;
+                            _viewerMessage = $"Selected {target.Definition.Name} as the spell target.";
+                        }, true);
+                }
+                GUI.EndScrollView();
+                manaTop += 158f;
+            }
 
             if (isEvolution)
             {
@@ -1235,7 +1312,10 @@ namespace CardGame.Presentation
             }
             GUI.EndScrollView();
 
-            var confirmEnabled = _selectedManaIds.Count == cost && (!isEvolution || _selectedEvolutionBaseId != 0);
+            var confirmEnabled = _selectedManaIds.Count == cost &&
+                                 (!isEvolution || _selectedEvolutionBaseId != 0) &&
+                                 (!spellRequiresTarget ||
+                                  _selectedSpellTargetId != 0);
             GUI.enabled = confirmEnabled;
             if (GUI.Button(new Rect(area.x, area.yMax - 56f, area.width * 0.62f, 48f), $"Confirm — Turn {cost} Mana"))
                 ConfirmManualPlay();
@@ -1245,6 +1325,7 @@ namespace CardGame.Presentation
                 _selectingManaPayment = false;
                 _selectedManaIds.Clear();
                 _selectedEvolutionBaseId = 0;
+                _selectedSpellTargetId = 0;
                 _viewerMessage = string.Empty;
             }
         }
@@ -1255,7 +1336,8 @@ namespace CardGame.Presentation
             var payment = _selectedManaIds.ToArray();
             RuleResult result;
             if (card.Definition.Type == CardType.Spell)
-                result = TryCastSpell(HumanId, card, payment, _selectedOpponentCreature?.InstanceId ?? 0);
+                result = TryCastSpell(HumanId, card, payment,
+                    _selectedSpellTargetId);
             else
                 result = _engine.SummonCreature(_state, HumanId, card.InstanceId, payment, _selectedEvolutionBaseId);
 
@@ -1287,7 +1369,8 @@ namespace CardGame.Presentation
 
         private RuleResult TryCastSpell(int playerId, CardInstance spell, IReadOnlyCollection<long> payment, long preferredTarget)
         {
-            var candidates = new List<long> { preferredTarget };
+            var candidates = new List<long>();
+            if (preferredTarget != 0) candidates.Add(preferredTarget);
             candidates.AddRange(_state.Players[1 - playerId].BattleZone.Select(card => card.InstanceId));
             candidates.AddRange(_state.Players[playerId].BattleZone.Select(card => card.InstanceId));
             candidates.AddRange(_state.Players[playerId].Graveyard.Select(card => card.InstanceId));

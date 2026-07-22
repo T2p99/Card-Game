@@ -25,6 +25,35 @@ namespace CardGame.Core.Tests
         }
 
         [Test]
+        public void CrimsonHammer_HonorsSelectedTurnedTarget()
+        {
+            var state = EmptyState();
+            var engine = new RulesEngine();
+            var spell = Instance(10, TcgCatalog.ById["dm01-73-110"]);
+            var otherLegalTarget = Instance(20, Creature("other-small", 1000));
+            var selectedTurnedTarget = Instance(21, Creature("turned-small", 2000));
+            selectedTurnedTarget.Tapped = true;
+            state.Players[0].Hand.Add(spell);
+            state.Players[1].BattleZone.Add(otherLegalTarget);
+            state.Players[1].BattleZone.Add(selectedTurnedTarget);
+            state.Players[0].Mana.Add(Instance(30, Creature("mana-a", 1000)));
+            state.Players[0].Mana.Add(Instance(31, Creature("mana-b", 1000)));
+
+            var candidates = engine.GetSpellTargetCandidates(state, 0,
+                spell.InstanceId);
+            var result = engine.CastSpell(state, 0, spell.InstanceId,
+                new long[] { 30, 31 }, selectedTurnedTarget.InstanceId);
+
+            Assert.That(candidates, Has.Member(selectedTurnedTarget));
+            Assert.That(result.Success, Is.True);
+            Assert.That(state.Players[1].BattleZone, Has.Member(otherLegalTarget));
+            Assert.That(state.Players[1].BattleZone,
+                Has.No.Member(selectedTurnedTarget));
+            Assert.That(state.Players[1].Graveyard,
+                Has.Member(selectedTurnedTarget));
+        }
+
+        [Test]
         public void DeathSmoke_RejectsTappedTargetWithoutSpendingMana()
         {
             var state = EmptyState();

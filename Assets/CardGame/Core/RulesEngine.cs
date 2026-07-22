@@ -200,6 +200,106 @@ namespace CardGame.Core
                 : string.Join(" and ", descriptions);
         }
 
+        public bool SpellUsesSingleCardTarget(CardDefinition spell)
+        {
+            if (spell == null || spell.Type != CardType.Spell) return false;
+            return spell.SpellEffects.Any(LegacySpellEffectUsesTarget) ||
+                   SingleCardTargetRules(spell).Any();
+        }
+
+        public bool SpellRequiresSingleCardTarget(CardDefinition spell)
+        {
+            if (spell == null || spell.Type != CardType.Spell) return false;
+            if (spell.SpellEffects.Any(LegacySpellEffectUsesTarget)) return true;
+            return SingleCardTargetRules(spell).Any(rule =>
+                !rule.Optional && rule.Selector.Minimum > 0);
+        }
+
+        public IReadOnlyList<CardInstance> GetSpellTargetCandidates(
+            GameState state,
+            int playerId,
+            long cardInstanceId)
+        {
+            if (state == null || playerId < 0 || playerId >= state.Players.Length)
+                return Array.Empty<CardInstance>();
+            var spell = Find(state.Players[playerId].Hand, cardInstanceId) ??
+                        Find(state.PendingShieldTriggers, cardInstanceId);
+            if (spell == null || spell.Definition.Type != CardType.Spell)
+                return Array.Empty<CardInstance>();
+
+            var candidates = new List<CardInstance>();
+            foreach (var effect in spell.Definition.SpellEffects)
+                AddLegacySpellTargetCandidates(state, playerId, effect, candidates);
+            foreach (var rule in SingleCardTargetRules(spell.Definition))
+                candidates.AddRange(_abilities.LegalCandidatesFor(state, spell, rule));
+            return candidates.Where(card => card != null)
+                .GroupBy(card => card.InstanceId)
+                .Select(group => group.First())
+                .ToArray();
+        }
+
+        private static IEnumerable<RuleAbilityDefinition> SingleCardTargetRules(
+            CardDefinition spell)
+        {
+            return (spell?.RuleAbilities ?? Array.Empty<RuleAbilityDefinition>())
+                .Where(rule => rule != null &&
+                    rule.Timing == AbilityTiming.OnCast &&
+                    rule.Selector != null &&
+                    rule.Selector.Mode == RuleSelectionMode.Choose &&
+                    rule.Selector.Maximum == 1);
+        }
+
+        private static bool LegacySpellEffectUsesTarget(
+            SpellEffectDefinition effect)
+        {
+            switch (effect.Kind)
+            {
+                case SpellEffectKind.DestroyOpponentCreature:
+                case SpellEffectKind.DestroyOpponentUntappedCreature:
+                case SpellEffectKind.DestroyOpponentCreatureAtMostPower:
+                case SpellEffectKind.ReturnOwnCreatureFromGraveyard:
+                case SpellEffectKind.GrantTemporaryPowerAttacker:
+                case SpellEffectKind.GrantTemporaryDoubleBreaker:
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        private static void AddLegacySpellTargetCandidates(
+            GameState state,
+            int playerId,
+            SpellEffectDefinition effect,
+            ICollection<CardInstance> candidates)
+        {
+            var player = state.Players[playerId];
+            var opponent = state.Players[1 - playerId];
+            switch (effect.Kind)
+            {
+                case SpellEffectKind.DestroyOpponentCreature:
+                    foreach (var card in opponent.BattleZone) candidates.Add(card);
+                    break;
+                case SpellEffectKind.DestroyOpponentUntappedCreature:
+                    foreach (var card in opponent.BattleZone.Where(card => !card.Tapped))
+                        candidates.Add(card);
+                    break;
+                case SpellEffectKind.DestroyOpponentCreatureAtMostPower:
+                    foreach (var card in opponent.BattleZone.Where(card =>
+                                 card.Definition.Power <= effect.Value))
+                        candidates.Add(card);
+                    break;
+                case SpellEffectKind.ReturnOwnCreatureFromGraveyard:
+                    foreach (var card in player.Graveyard.Where(card =>
+                                 card.Definition.IsCreature))
+                        candidates.Add(card);
+                    break;
+                case SpellEffectKind.GrantTemporaryPowerAttacker:
+                case SpellEffectKind.GrantTemporaryDoubleBreaker:
+                    foreach (var card in player.BattleZone) candidates.Add(card);
+                    break;
+            }
+        }
+
         public RuleResult CastSpell(
             GameState state,
             int playerId,
@@ -218,7 +318,8 @@ namespace CardGame.Core
                 return RuleResult.Fail("This card's full rules are not implemented yet.");
             if (!_abilities.CanPlay(state, spell))
                 return RuleResult.Fail("This spell's cast condition is not met.");
-            var targetCheck = ValidateSpellTarget(state, playerId, spell.Definition, targetInstanceId);
+            var targetCheck = ValidateSpellTarget(state, playerId, spell,
+                targetInstanceId);
             if (!targetCheck.Success) return targetCheck;
             var payment = ValidateManaPayment(state, player, spell, manaInstanceIds);
             if (!payment.Success) return payment;
@@ -231,7 +332,8 @@ namespace CardGame.Core
             player.Resolving.Add(spell);
             _abilities.ResolveSpellCast(state, spell,
                 () => ResolveSpellEffects(state, playerId, spell.Definition,
-                    targetInstanceId));
+                    targetInstanceId),
+                preferredTargetInstanceId: targetInstanceId);
             if (state.IsFinished) return RuleResult.Ok();
             player.Resolving.Remove(spell);
             PlaceResolvedSpell(state, player, spell, false);
@@ -269,7 +371,8 @@ namespace CardGame.Core
             if (card.Definition.Type != CardType.Spell)
                 return RuleResult.Fail("The selected shield trigger cannot be played.");
 
-            var targetCheck = ValidateSpellTarget(state, defendingPlayerId, card.Definition, targetInstanceId);
+            var targetCheck = ValidateSpellTarget(state, defendingPlayerId, card,
+                targetInstanceId);
             if (!targetCheck.Success) return targetCheck;
 
             state.PendingShieldTriggers.Remove(card);
@@ -280,7 +383,7 @@ namespace CardGame.Core
             _abilities.ResolveSpellCast(state, card,
                 () => ResolveSpellEffects(state, defendingPlayerId,
                     card.Definition, targetInstanceId), true,
-                triggeringAttacker);
+                triggeringAttacker, targetInstanceId);
             if (state.IsFinished) return RuleResult.Ok();
             player.Resolving.Remove(card);
             PlaceResolvedSpell(state, player, card, true);
@@ -961,13 +1064,13 @@ namespace CardGame.Core
             foreach (var id in ids) Find(player.Mana, id).Tapped = true;
         }
 
-        private static RuleResult ValidateSpellTarget(
+        private RuleResult ValidateSpellTarget(
             GameState state,
             int playerId,
-            CardDefinition spell,
+            CardInstance spell,
             long targetInstanceId)
         {
-            foreach (var effect in spell.SpellEffects)
+            foreach (var effect in spell.Definition.SpellEffects)
             {
                 CardInstance target;
                 switch (effect.Kind)
@@ -1002,6 +1105,13 @@ namespace CardGame.Core
                         break;
                 }
             }
+
+            var targetRules = SingleCardTargetRules(spell.Definition).ToArray();
+            if (targetInstanceId != 0 && targetRules.Length > 0 &&
+                !targetRules.SelectMany(rule =>
+                        _abilities.LegalCandidatesFor(state, spell, rule))
+                    .Any(card => card.InstanceId == targetInstanceId))
+                return RuleResult.Fail("Choose a legal target for this spell.");
 
             return RuleResult.Ok();
         }

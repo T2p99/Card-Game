@@ -169,6 +169,8 @@ namespace CardGame.Core
         private int _abilityResolutionDepth;
         private CardInstance _currentEventOwnerCard;
         private int _currentEventOwnerId = -1;
+        private CardInstance _preferredSelectionSource;
+        private long _preferredSelectionInstanceId;
 
         public AbilityResolver(IAbilityDecisionProvider decisions = null)
         {
@@ -736,7 +738,8 @@ namespace CardGame.Core
 
         public void ResolveSpellCast(GameState state, CardInstance spell,
             Action resolveLegacyEffects = null, bool castByShieldTrigger = false,
-            CardInstance triggeringAttacker = null)
+            CardInstance triggeringAttacker = null,
+            long preferredTargetInstanceId = 0)
         {
             if (state == null || state.IsFinished || spell == null) return;
             // Cast triggers are captured before the spell starts resolving. A
@@ -784,7 +787,19 @@ namespace CardGame.Core
                         AbilityTiming.OnOpponentShieldTriggerUsed, true,
                         attackerWatchers, attackerDelayed);
 
-                Resolve(state, spell, AbilityTiming.OnCast);
+                var previousPreferredSource = _preferredSelectionSource;
+                var previousPreferredInstanceId = _preferredSelectionInstanceId;
+                _preferredSelectionSource = spell;
+                _preferredSelectionInstanceId = preferredTargetInstanceId;
+                try
+                {
+                    Resolve(state, spell, AbilityTiming.OnCast);
+                }
+                finally
+                {
+                    _preferredSelectionSource = previousPreferredSource;
+                    _preferredSelectionInstanceId = previousPreferredInstanceId;
+                }
                 if (!state.IsFinished) resolveLegacyEffects?.Invoke();
             }
             finally
@@ -2908,12 +2923,57 @@ namespace CardGame.Core
                     }
                     return selected;
                 }
+                case RuleSelectionMode.Choose:
+                {
+                    var preferred = source == _preferredSelectionSource &&
+                                    _preferredSelectionInstanceId != 0
+                        ? candidates.FirstOrDefault(card =>
+                            card.InstanceId == _preferredSelectionInstanceId)
+                        : null;
+                    if (preferred == null)
+                        return ChooseCardsSafely(state, ownerId, source, ability,
+                            candidates, minimum, maximum);
+
+                    _preferredSelectionInstanceId = 0;
+                    var remaining = candidates.Where(card => card != preferred).ToArray();
+                    var additional = ChooseCardsSafely(state, ownerId, source, ability,
+                        remaining, Math.Max(0, minimum - 1), Math.Max(0, maximum - 1));
+                    return new[] { preferred }.Concat(additional).Take(maximum).ToArray();
+                }
                 default:
                 {
                     return ChooseCardsSafely(state, ownerId, source, ability,
                         candidates, minimum, maximum);
                 }
             }
+        }
+
+        internal IReadOnlyList<CardInstance> LegalCandidatesFor(
+            GameState state,
+            CardInstance source,
+            RuleAbilityDefinition ability)
+        {
+            if (state == null || source == null || ability?.Selector == null)
+                return Array.Empty<CardInstance>();
+            var ownerId = FindOwnerId(state, source);
+            if (ownerId < 0 || !ConditionMatches(state, source, ability.Condition))
+                return Array.Empty<CardInstance>();
+
+            IEnumerable<CardInstance> candidates = Candidates(state, source,
+                ability.Selector);
+            if (ability.Operation == AbilityOperation.Tap)
+                candidates = candidates.Where(card => CanBeTappedBy(state, card,
+                    ownerId));
+            if (ability.Selector.Mode == RuleSelectionMode.Choose ||
+                ability.Selector.Mode == RuleSelectionMode.PowerBudget)
+            {
+                var chooserId = ability.Chooser == RuleController.Opponent
+                    ? 1 - ownerId
+                    : ownerId;
+                candidates = candidates.Where(card => CanBeChosenBy(state, card,
+                    chooserId));
+            }
+            return candidates.Distinct().ToArray();
         }
 
         private IReadOnlyList<CardInstance> ChooseCardsSafely(
