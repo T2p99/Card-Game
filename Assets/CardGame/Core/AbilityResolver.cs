@@ -158,6 +158,8 @@ namespace CardGame.Core
 
         private readonly IAbilityDecisionProvider _decisions;
         private readonly HashSet<CardInstance> _powerEvaluation = new HashSet<CardInstance>();
+        private readonly HashSet<CardInstance> _survivorEvaluation =
+            new HashSet<CardInstance>();
         private readonly List<PendingTriggerInvocation> _pendingTriggers =
             new List<PendingTriggerInvocation>();
         private readonly List<PendingZoneReset> _pendingZoneResets =
@@ -455,6 +457,7 @@ namespace CardGame.Core
                 _abilityResolutionDepth--;
             }
             DrainPendingTriggers();
+            if (_abilityResolutionDepth == 0) ResolveStateBasedActions(state);
             return destroyed;
         }
 
@@ -2549,13 +2552,15 @@ namespace CardGame.Core
                 case AbilityOperation.Destroy:
                 case AbilityOperation.DestroyOrSource:
                     appliedCount = ApplyDestructionEvent(state, selected).Count(outcome =>
-                        outcome == DestructionOutcome.Destroyed);
+                        outcome == DestructionOutcome.Destroyed ||
+                        outcome == DestructionOutcome.Replaced);
                     break;
                 case AbilityOperation.DestroyIfCombinedPowerBelowSource:
                     appliedCount = 0;
                     if (selected.Sum(card => CurrentPower(state, card)) < CurrentPower(state, source))
                         appliedCount = ApplyDestructionEvent(state, selected).Count(outcome =>
-                            outcome == DestructionOutcome.Destroyed);
+                            outcome == DestructionOutcome.Destroyed ||
+                            outcome == DestructionOutcome.Replaced);
                     break;
                 case AbilityOperation.SplitPairOpponentChoice:
                 {
@@ -3213,6 +3218,7 @@ namespace CardGame.Core
                 _abilityResolutionDepth--;
             }
             DrainPendingTriggers();
+            if (_abilityResolutionDepth == 0) ResolveStateBasedActions(state);
             return destroyed;
         }
 
@@ -3425,10 +3431,8 @@ namespace CardGame.Core
             var remaining = removedTop.EvolutionMaterials.ToArray();
             removedTop.EvolutionMaterials.Clear();
             var rebuiltTop = remaining[0];
-            rebuiltTop.ResetTransientZoneState();
             for (var index = 1; index < remaining.Length; index++)
             {
-                remaining[index].ResetTransientZoneState();
                 rebuiltTop.EvolutionMaterials.Add(remaining[index]);
             }
             rebuiltTop.Tapped = removedTop.Tapped;
@@ -3594,9 +3598,11 @@ namespace CardGame.Core
             evolution.EnteredBattleZoneOnTurn = -1;
             foreach (var source in chosen)
             {
-                source.ResetTransientZoneState();
+                source.ResetTransientZoneState(
+                    preserveBattleZoneEntryTurn: true);
                 foreach (var material in FlattenEvolutionMaterials(source))
-                    material.ResetTransientZoneState();
+                    material.ResetTransientZoneState(
+                        preserveBattleZoneEntryTurn: true);
                 player.BattleZone.Remove(source);
                 evolution.EvolutionMaterials.Add(source);
             }
@@ -3691,9 +3697,6 @@ namespace CardGame.Core
             removedTop.EvolutionMaterials.Clear();
             foreach (var source in sources)
             {
-                source.ResetTransientZoneState();
-                foreach (var material in FlattenEvolutionMaterials(source))
-                    material.ResetTransientZoneState();
                 source.Tapped = removedTop.Tapped;
                 owner.BattleZone.Add(source);
             }
@@ -3856,21 +3859,31 @@ namespace CardGame.Core
                 card.TemporaryKeywords.Contains(CardKeyword.Survivor) ||
                 card.TimedKeywords.Any(effect => effect.Keyword == CardKeyword.Survivor))
                 return true;
-            var ownerId = FindOwnerId(state, card);
-            if (ownerId < 0) return false;
-            foreach (var source in state.Players[ownerId].BattleZone)
+            if (!_survivorEvaluation.Add(card)) return false;
+            try
             {
-                var directRules = source.Definition.RuleAbilities.Concat(source.TimedRuleAbilities
-                    .Where(effect => effect?.Ability != null)
-                    .Select(effect => effect.Ability));
-                foreach (var ability in directRules.Where(rule =>
-                             rule.Timing == AbilityTiming.Static &&
-                             rule.Operation == AbilityOperation.GrantKeyword &&
-                             rule.Keyword == CardKeyword.Survivor))
-                    if (ConditionMatches(state, source, ability.Condition) &&
-                        MatchesStaticTarget(state, source, card, ability.Selector)) return true;
+                var ownerId = FindOwnerId(state, card);
+                if (ownerId < 0) return false;
+                foreach (var source in state.Players[ownerId].BattleZone)
+                {
+                    var directRules = source.Definition.RuleAbilities.Concat(
+                        source.TimedRuleAbilities
+                            .Where(effect => effect?.Ability != null)
+                            .Select(effect => effect.Ability));
+                    foreach (var ability in directRules.Where(rule =>
+                                 rule.Timing == AbilityTiming.Static &&
+                                 rule.Operation == AbilityOperation.GrantKeyword &&
+                                 rule.Keyword == CardKeyword.Survivor))
+                        if (ConditionMatches(state, source, ability.Condition) &&
+                            MatchesStaticTarget(state, source, card,
+                                ability.Selector)) return true;
+                }
+                return false;
             }
-            return false;
+            finally
+            {
+                _survivorEvaluation.Remove(card);
+            }
         }
 
         private bool BattleOpponentMatches(GameState state, CardInstance card,

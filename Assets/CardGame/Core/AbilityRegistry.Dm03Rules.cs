@@ -286,7 +286,7 @@ namespace CardGame.Core
             }
 
             var allManaCivilizationPower = Regex.Match(text,
-                @"^While all the cards in your mana zone are (light|water|darkness|fire|nature) cards, this creature gets \+(\d+) power(?: and has \""Double breaker.*)?\.$",
+                @"^While all the cards in your mana zone are (light|water|darkness|fire|nature) cards, this creature gets \+(\d+) power(?:\.| and has ""Double breaker.*"")$",
                 RegexOptions.IgnoreCase);
             if (allManaCivilizationPower.Success)
             {

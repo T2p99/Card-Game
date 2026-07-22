@@ -36,8 +36,17 @@ namespace CardGame.Core.Tests
             var lamiel = Instance(10, "dm11-10-55");
             var victim = Instance(11, Creature("victim"));
             var draw = Instance(12, Creature("draw"));
+            var firstWaveStriker = Creature("wave-striker-one");
+            firstWaveStriker.Abilities = new[]
+                { new KeywordAbility(CardKeyword.WaveStriker) };
+            var secondWaveStriker = Creature("wave-striker-two");
+            secondWaveStriker.Abilities = new[]
+                { new KeywordAbility(CardKeyword.WaveStriker) };
             state.Players[0].BattleZone.Add(lamiel);
             state.Players[0].BattleZone.Add(victim);
+            state.Players[0].BattleZone.Add(Instance(13, firstWaveStriker));
+            state.Players[0].BattleZone.Add(Instance(14, secondWaveStriker));
+            state.Players[0].Deck.Add(Instance(15, Creature("deck-filler")));
             state.Players[0].Deck.Add(draw);
 
             new AbilityResolver().DestroyCard(state, victim);

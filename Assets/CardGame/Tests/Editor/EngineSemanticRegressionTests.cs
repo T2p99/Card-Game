@@ -74,7 +74,9 @@ namespace CardGame.Core.Tests
                 }
             };
             var source = Instance(10, sourceDefinition);
-            var opposingCreature = Instance(20, Creature("opposing"));
+            var opposingDefinition = Creature("opposing");
+            opposingDefinition.Power = 3000;
+            var opposingCreature = Instance(20, opposingDefinition);
             state.Players[0].Resolving.Add(source);
             state.Players[1].BattleZone.Add(opposingCreature);
             state.Players[1].Deck.Add(Instance(30, Creature("draw")));
@@ -884,9 +886,11 @@ namespace CardGame.Core.Tests
             state.Players[0].Hand.Add(evolution);
             state.Players[0].BattleZone.Add(flexible);
             state.Players[0].BattleZone.Add(raceAOnly);
+            var mana = Instance(30, Creature("evolution-mana"));
+            state.Players[0].Mana.Add(mana);
 
             var result = new RulesEngine().SummonCreatureWithEvolutionBases(
-                state, 0, evolution.InstanceId, Array.Empty<long>(),
+                state, 0, evolution.InstanceId, new[] { mana.InstanceId },
                 new[] { flexible.InstanceId, raceAOnly.InstanceId });
 
             Assert.That(result.Success, Is.True);
@@ -901,7 +905,7 @@ namespace CardGame.Core.Tests
             var sourceDefinition = Spell("conditional-destruction");
             sourceDefinition.RuleAbilities = new[]
             {
-                new RuleAbilityDefinition("test.try-destroy", AbilityTiming.OnCast,
+                new RuleAbilityDefinition("test.conditional-destruction", AbilityTiming.OnCast,
                     AbilityOperation.Destroy)
                 {
                     Selector = new RuleSelectorDefinition
@@ -914,7 +918,7 @@ namespace CardGame.Core.Tests
                         Filter = new CardFilterDefinition { CreaturesOnly = true }
                     }
                 },
-                new RuleAbilityDefinition("test.if-destroyed-draw", AbilityTiming.OnCast,
+                new RuleAbilityDefinition("test.conditional-destruction", AbilityTiming.OnCast,
                     AbilityOperation.Draw)
                 {
                     Amount = 1,
@@ -960,7 +964,7 @@ namespace CardGame.Core.Tests
             var sourceDefinition = Spell("conditional-replaced-destruction");
             sourceDefinition.RuleAbilities = new[]
             {
-                new RuleAbilityDefinition("test.try-replaced-destroy", AbilityTiming.OnCast,
+                new RuleAbilityDefinition("test.conditional-replaced-destruction", AbilityTiming.OnCast,
                     AbilityOperation.Destroy)
                 {
                     Selector = new RuleSelectorDefinition
@@ -973,7 +977,7 @@ namespace CardGame.Core.Tests
                         Filter = new CardFilterDefinition { CreaturesOnly = true }
                     }
                 },
-                new RuleAbilityDefinition("test.if-replaced-destroy-draw", AbilityTiming.OnCast,
+                new RuleAbilityDefinition("test.conditional-replaced-destruction", AbilityTiming.OnCast,
                     AbilityOperation.Draw)
                 {
                     Amount = 1,

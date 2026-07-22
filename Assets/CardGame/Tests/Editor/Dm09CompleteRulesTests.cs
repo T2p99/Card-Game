@@ -158,13 +158,31 @@ namespace CardGame.Core.Tests
             state.Players[0].BattleZone.Add(aquaMaster);
             for (var i = 0; i < 3; i++)
                 state.Players[1].Shields.Add(Instance(20 + i, Creature("shield-" + i)));
-            var engine = new RulesEngine();
+            var engine = new RulesEngine(
+                new FaceUpThenBreakDifferentShieldDecisions());
 
             Assert.That(engine.DeclareAttack(state, 0, aquaMaster.InstanceId,
                 AttackTargetKind.Player).Success, Is.True);
             Assert.That(engine.DeclineBlockAndResolve(state, 1).Success, Is.True);
 
             Assert.That(state.Players[1].Shields.Any(card => card.FaceUp), Is.True);
+        }
+
+        private sealed class FaceUpThenBreakDifferentShieldDecisions :
+            IAbilityDecisionProvider
+        {
+            public bool ChooseOptional(GameState state, int playerId,
+                CardInstance source, RuleAbilityDefinition ability) => true;
+
+            public IReadOnlyList<CardInstance> ChooseCards(GameState state,
+                int playerId, CardInstance source, RuleAbilityDefinition ability,
+                IReadOnlyList<CardInstance> candidates, int minimum, int maximum)
+            {
+                var ordered = ability.Operation == AbilityOperation.TurnFaceUp
+                    ? candidates.OrderBy(card => card.InstanceId)
+                    : candidates.OrderByDescending(card => card.InstanceId);
+                return ordered.Take(Math.Min(maximum, candidates.Count)).ToArray();
+            }
         }
 
         [Test]

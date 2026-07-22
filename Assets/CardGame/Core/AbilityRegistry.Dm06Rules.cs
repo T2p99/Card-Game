@@ -179,6 +179,18 @@ namespace CardGame.Core
                     1, 1, new CardFilterDefinition
                     { CreaturesOnly = true, Civilizations = new[] { Civilization.Darkness } });
 
+            if (text.Equals("When you put this creature into the battle zone, you may return a Survivor from your graveyard to your hand.",
+                    StringComparison.OrdinalIgnoreCase))
+                return AddMoveRule(card, line, AbilityTiming.OnSummon,
+                    RuleController.Source, RuleZone.Graveyard, RuleZone.Hand,
+                    RuleSelectionMode.Choose, 0, 1,
+                    new CardFilterDefinition
+                    {
+                        CreaturesOnly = true,
+                        HasRequiredKeyword = true,
+                        RequiredKeyword = CardKeyword.Survivor
+                    }, true);
+
             if (text.Equals("Return any number of your creatures from the battle zone to your hand. Then you may choose that many of your opponent's creatures in the battle zone and return them to your opponent's hand.",
                     StringComparison.OrdinalIgnoreCase))
             {

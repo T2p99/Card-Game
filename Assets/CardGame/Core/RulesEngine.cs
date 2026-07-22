@@ -118,7 +118,8 @@ namespace CardGame.Core
                 if (!CanMatchEvolutionBases(state, requirements, evolutionBases,
                         new HashSet<CardInstance>(), 0))
                     return RuleResult.Fail(
-                        $"{creature.Definition.Name} does not have the required evolution base.");
+                        $"{creature.Definition.Name} requires an evolution base matching " +
+                        $"{DescribeEvolutionRequirements(requirements)}.");
             }
 
             var payment = ValidateManaPayment(state, player, creature, manaInstanceIds);
@@ -134,7 +135,8 @@ namespace CardGame.Core
                 foreach (var evolutionBase in evolutionBases)
                 {
                     foreach (var pileCard in CardAndEvolutionMaterials(evolutionBase))
-                        pileCard.ResetTransientZoneState();
+                        pileCard.ResetTransientZoneState(
+                            preserveBattleZoneEntryTurn: true);
                     player.BattleZone.Remove(evolutionBase);
                     creature.EvolutionMaterials.Add(evolutionBase);
                 }
@@ -176,6 +178,26 @@ namespace CardGame.Core
                 used.Remove(candidate);
             }
             return false;
+        }
+
+        private static string DescribeEvolutionRequirements(
+            IEnumerable<EvolutionBaseRequirement> requirements)
+        {
+            var descriptions = new List<string>();
+            foreach (var requirement in requirements ??
+                     Array.Empty<EvolutionBaseRequirement>())
+            {
+                var alternatives = (requirement.Races ?? Array.Empty<string>())
+                    .Where(race => !string.IsNullOrWhiteSpace(race)).ToList();
+                if (!string.IsNullOrWhiteSpace(requirement.RaceContains))
+                    alternatives.Add("a race containing " + requirement.RaceContains);
+                descriptions.Add(alternatives.Count == 0
+                    ? "the printed requirement"
+                    : string.Join(" or ", alternatives));
+            }
+            return descriptions.Count == 0
+                ? "the printed requirement"
+                : string.Join(" and ", descriptions);
         }
 
         public RuleResult CastSpell(
@@ -295,7 +317,9 @@ namespace CardGame.Core
                     (!string.IsNullOrEmpty(requirement.RaceContains) &&
                      _abilities.RaceContains(evolutionBase, requirement.RaceContains));
                 if (!matches)
-                    return RuleResult.Fail($"{creature.Definition.Name} does not have the required evolution base.");
+                    return RuleResult.Fail(
+                        $"{creature.Definition.Name} requires an evolution base matching " +
+                        $"{DescribeEvolutionRequirements(requirements)}.");
             }
 
             state.PendingShieldTriggers.Remove(creature);
@@ -305,7 +329,8 @@ namespace CardGame.Core
             {
                 creature.Tapped = evolutionBase.Tapped;
                 foreach (var pileCard in CardAndEvolutionMaterials(evolutionBase))
-                    pileCard.ResetTransientZoneState();
+                    pileCard.ResetTransientZoneState(
+                        preserveBattleZoneEntryTurn: true);
                 player.BattleZone.Remove(evolutionBase);
                 creature.EvolutionMaterials.Add(evolutionBase);
                 creature.EnteredBattleZoneOnTurn = -1;
@@ -452,6 +477,9 @@ namespace CardGame.Core
                 return RuleResult.Fail("Resolve pending shield triggers first.");
             var creature = Find(state.Players[playerId].BattleZone, creatureInstanceId);
             if (creature == null) return RuleResult.Fail("Choose one of your creatures in the battle zone.");
+            if (creature.EnteredBattleZoneOnTurn == state.TurnNumber &&
+                !_abilities.HasKeyword(state, creature, CardKeyword.SpeedAttacker))
+                return RuleResult.Fail("The creature has summoning sickness and cannot use a tap ability.");
             if (!_abilities.CanDeclareAnyAttack(state, creature))
                 return RuleResult.Fail("A creature that cannot legally attack cannot use a tap ability.");
             if (!_abilities.CanUseTapAbility(state, creature))

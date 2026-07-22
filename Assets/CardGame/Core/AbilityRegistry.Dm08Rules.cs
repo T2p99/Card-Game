@@ -6,6 +6,14 @@ namespace CardGame.Core
     {
         private static bool TryDm08Rule(CardDefinition card, PrintedRuleLine line, string text)
         {
+            if (text.Equals("When you put this creature into the battle zone, you may return all creatures that have Dragon in their race from your graveyard to your hand.",
+                    StringComparison.OrdinalIgnoreCase))
+                return AddMoveRule(card, line, AbilityTiming.OnSummon,
+                    RuleController.Source, RuleZone.Graveyard, RuleZone.Hand,
+                    RuleSelectionMode.All, 0, int.MaxValue,
+                    new CardFilterDefinition
+                    { CreaturesOnly = true, RaceContains = "Dragon" }, true);
+
             if (text.Equals("After you cast a spell by using its \"shield trigger\" ability, put it into your hand instead of your graveyard.",
                     StringComparison.OrdinalIgnoreCase))
             {

@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.Linq;
 using NUnit.Framework;
 
 namespace CardGame.Core.Tests
@@ -14,8 +16,8 @@ namespace CardGame.Core.Tests
             state.PendingShieldTriggers.Add(surfer);
             state.Players[0].BattleZone.Add(target);
 
-            var result = new RulesEngine().CastShieldTrigger(state, 1,
-                surfer.InstanceId);
+            var result = new RulesEngine(new TargetCardDecisionProvider(target.InstanceId))
+                .CastShieldTrigger(state, 1, surfer.InstanceId);
 
             Assert.That(result.Success, Is.True, result.Error);
             Assert.That(state.Players[1].BattleZone, Does.Contain(surfer));
@@ -72,6 +74,27 @@ namespace CardGame.Core.Tests
             Phase = GamePhase.Attack,
             RandomSeed = 42
         };
+
+        private sealed class TargetCardDecisionProvider : IAbilityDecisionProvider
+        {
+            private readonly long _targetInstanceId;
+
+            public TargetCardDecisionProvider(long targetInstanceId) =>
+                _targetInstanceId = targetInstanceId;
+
+            public bool ChooseOptional(GameState state, int playerId,
+                CardInstance source, RuleAbilityDefinition ability) => true;
+
+            public IReadOnlyList<CardInstance> ChooseCards(GameState state,
+                int playerId, CardInstance source, RuleAbilityDefinition ability,
+                IReadOnlyList<CardInstance> candidates, int minimum, int maximum)
+            {
+                var target = candidates.FirstOrDefault(card =>
+                    card.InstanceId == _targetInstanceId);
+                if (target != null && maximum > 0) return new[] { target };
+                return candidates.Take(maximum).ToArray();
+            }
+        }
 
         private static CardDefinition Creature(string id) => new CardDefinition
         {

@@ -142,17 +142,47 @@ namespace CardGame.Core.Tests
             var state = EmptyState();
             var innocentHunter = Instance(10, "dm06-103-110");
             var luGila = Instance(11, "dm06-2-110");
+            var crazeValkyrie = Instance(12, "dm06-s1-s10");
             state.Players[0].BattleZone.Add(innocentHunter);
-            state.Players[0].Hand.Add(luGila);
-            AddMana(state, 0, luGila.Definition.Cost, Civilization.Light);
+            state.Players[0].BattleZone.Add(luGila);
+            state.Players[0].Hand.Add(crazeValkyrie);
+            AddMana(state, 0, crazeValkyrie.Definition.Cost, Civilization.Light);
 
-            var result = new RulesEngine().SummonCreature(state, 0, luGila.InstanceId,
+            var result = new RulesEngine().SummonCreature(state, 0,
+                crazeValkyrie.InstanceId,
                 state.Players[0].Mana.Select(card => card.InstanceId).ToArray(),
                 innocentHunter.InstanceId);
 
             Assert.That(result.Success, Is.True);
-            Assert.That(luGila.Tapped, Is.True);
-            Assert.That(luGila.EvolutionMaterials, Does.Contain(innocentHunter));
+            Assert.That(crazeValkyrie.Tapped, Is.True);
+            Assert.That(crazeValkyrie.EvolutionMaterials,
+                Does.Contain(innocentHunter));
+        }
+
+        [Test]
+        public void GraveWormQ_ReturnsASurvivorFromGraveyardOnSummon()
+        {
+            var state = EmptyState();
+            var graveWorm = Instance(10, "dm06-58-110");
+            var survivorDefinition = Creature("grave-survivor",
+                Civilization.Nature);
+            survivorDefinition.Abilities = new[]
+                { new KeywordAbility(CardKeyword.Survivor) };
+            var survivor = Instance(20, survivorDefinition);
+            var ordinary = Instance(21, Creature("ordinary-grave-creature"));
+            state.Players[0].Hand.Add(graveWorm);
+            state.Players[0].Graveyard.Add(survivor);
+            state.Players[0].Graveyard.Add(ordinary);
+            AddMana(state, 0, graveWorm.Definition.Cost,
+                Civilization.Darkness);
+
+            var result = new RulesEngine().SummonCreature(state, 0,
+                graveWorm.InstanceId,
+                state.Players[0].Mana.Select(card => card.InstanceId).ToArray());
+
+            Assert.That(result.Success, Is.True, result.Error);
+            Assert.That(state.Players[0].Hand, Does.Contain(survivor));
+            Assert.That(state.Players[0].Graveyard, Does.Contain(ordinary));
         }
 
         [Test]

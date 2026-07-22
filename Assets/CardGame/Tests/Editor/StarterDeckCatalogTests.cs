@@ -44,7 +44,7 @@ namespace CardGame.Core.Tests
         [Test]
         public void Catalog_TracksProvenanceAndImplementationStatus()
         {
-            Assert.That(StarterDeckCatalog.Cards.Count, Is.EqualTo(41));
+            Assert.That(StarterDeckCatalog.Cards.Count, Is.EqualTo(49));
             Assert.That(StarterDeckCatalog.Cards.Values.All(card =>
                 card.DataSource == StarterDeckCatalog.CardDatabaseSource), Is.True);
             Assert.That(StarterDeckCatalog.Cards["dm01-070"].KeywordValue(CardKeyword.PowerAttacker), Is.EqualTo(2000));

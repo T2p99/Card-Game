@@ -130,6 +130,7 @@ namespace CardGame.Core.Tests
             AddMana(state, 0, spell.Definition.Cost, Civilization.Light);
             state.Players[0].Deck.Add(Instance(30, Creature("draw-zero")));
             state.Players[1].Deck.Add(Instance(31, Creature("draw-one")));
+            state.Players[1].Deck.Add(Instance(32, Creature("draw-one-filler")));
             var engine = new RulesEngine();
 
             Assert.That(engine.CastSpell(state, 0, spell.InstanceId,

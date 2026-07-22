@@ -17,6 +17,37 @@ namespace CardGame.Core.Tests
         }
 
         [Test]
+        public void DimensionSplitter_ReturnsEveryDragonRaceCreatureFromGraveyard()
+        {
+            var state = EmptyState();
+            var splitter = Instance(10, "dm08-28-55");
+            var armoredDragon = Instance(20, Creature("armored-dragon",
+                Civilization.Fire, "Armored Dragon"));
+            var earthDragon = Instance(21, Creature("earth-dragon",
+                Civilization.Nature, "Earth Dragon"));
+            var nonDragon = Instance(22, Creature("non-dragon",
+                Civilization.Nature, "Beast Folk"));
+            state.Players[0].Hand.Add(splitter);
+            state.Players[0].Graveyard.Add(armoredDragon);
+            state.Players[0].Graveyard.Add(earthDragon);
+            state.Players[0].Graveyard.Add(nonDragon);
+            for (var index = 0; index < splitter.Definition.Cost; index++)
+                state.Players[0].Mana.Add(Instance(100 + index,
+                    Creature("darkness-mana-" + index,
+                        Civilization.Darkness)));
+
+            var result = new RulesEngine().SummonCreature(state, 0,
+                splitter.InstanceId, state.Players[0].Mana
+                    .Select(card => card.InstanceId).ToArray());
+
+            Assert.That(result.Success, Is.True, result.Error);
+            Assert.That(state.Players[0].Hand,
+                Is.EquivalentTo(new[] { armoredDragon, earthDragon }));
+            Assert.That(state.Players[0].Graveyard,
+                Is.EquivalentTo(new[] { nonDragon }));
+        }
+
+        [Test]
         public void BailasGale_ReturnsCastShieldTriggerSpellToHand()
         {
             var state = EmptyState();
@@ -124,8 +155,10 @@ namespace CardGame.Core.Tests
             var kachua = Instance(10, "dm08-5-55");
             var dragon = Instance(20, Creature("dragon", Civilization.Fire, "Armored Dragon", 5000));
             state.Players[0].BattleZone.Add(kachua);
+            state.Players[0].Deck.Add(Instance(21, Creature("own-deck-filler")));
             state.Players[0].Deck.Add(dragon);
             state.Players[1].Deck.Add(Instance(30, Creature("opponent-draw")));
+            state.Players[1].Deck.Add(Instance(31, Creature("opponent-deck-filler")));
             var engine = new RulesEngine();
 
             Assert.That(engine.UseTapAbility(state, 0, kachua.InstanceId).Success, Is.True);
@@ -162,9 +195,12 @@ namespace CardGame.Core.Tests
             var spell = Instance(20, Spell("opponent-spell", Civilization.Water));
             state.Players[0].BattleZone.Add(solGalla);
             state.Players[1].Hand.Add(spell);
+            var mana = Instance(21, Creature("opponent-mana",
+                Civilization.Water));
+            state.Players[1].Mana.Add(mana);
 
             Assert.That(new RulesEngine().CastSpell(state, 1, spell.InstanceId,
-                new long[0]).Success, Is.True);
+                new[] { mana.InstanceId }).Success, Is.True);
 
             Assert.That(new AbilityResolver().CurrentPower(state, solGalla), Is.EqualTo(4000));
         }

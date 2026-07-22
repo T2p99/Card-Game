@@ -118,7 +118,8 @@ namespace CardGame.Core.Tests
 
             Assert.That(state.Players[0].BattleZone, Is.Empty);
             Assert.That(state.Players[1].BattleZone, Is.Empty);
-            Assert.That(state.Players.SelectMany(player => player.Graveyard), Has.Count.EqualTo(3));
+            Assert.That(state.Players.SelectMany(player => player.Graveyard).Count(),
+                Is.EqualTo(3));
         }
 
         [Test]

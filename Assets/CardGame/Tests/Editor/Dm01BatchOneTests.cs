@@ -58,7 +58,7 @@ namespace CardGame.Core.Tests
             var state = EmptyState();
             var bronzeArm = Instance(10, StarterDeckCatalog.Cards["dm01-090"]);
             state.Players[0].Hand.Add(bronzeArm);
-            AddMana(state, 3);
+            AddMana(state, 3, Civilization.Nature);
             state.Players[0].Deck.Add(Instance(50, Creature("accelerated")));
 
             var result = new RulesEngine().SummonCreature(state, 0, bronzeArm.InstanceId, new long[] { 100, 101, 102 });

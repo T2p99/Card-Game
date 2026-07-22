@@ -159,7 +159,7 @@ namespace CardGame.Core.Tests
             attacker.EnteredBattleZoneOnTurn = 0;
             crypticTotem.Tapped = true;
             state.Players[0].BattleZone.Add(attacker);
-            state.Players[1].BattleZone.Add(crypticTotem);
+            state.Players[0].BattleZone.Add(crypticTotem);
             state.Players[1].Shields.Add(trigger);
             var engine = new RulesEngine();
 

@@ -119,10 +119,11 @@ namespace CardGame.Core
         /// changes zones must not carry temporary effects or combat history into
         /// its new game object.
         /// </summary>
-        internal void ResetTransientZoneState(bool clearShieldBreakContext = true)
+        internal void ResetTransientZoneState(bool clearShieldBreakContext = true,
+            bool preserveBattleZoneEntryTurn = false)
         {
             ZoneChangeVersion = unchecked(ZoneChangeVersion + 1);
-            EnteredBattleZoneOnTurn = -1;
+            if (!preserveBattleZoneEntryTurn) EnteredBattleZoneOnTurn = -1;
             TemporaryPowerAttacker = 0;
             TemporaryPower = 0;
             TemporaryDoubleBreaker = false;
