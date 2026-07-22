@@ -2530,6 +2530,7 @@ namespace CardGame.Core
         private int ApplySelected(GameState state, CardInstance source, int ownerId,
             RuleAbilityDefinition ability, IReadOnlyList<CardInstance> selected, PlayerState shuffleOwner)
         {
+            var abilityOwner = state.Players[ownerId];
             state.LastRuleSelection.Clear();
             state.LastRuleSelection.AddRange(selected);
             var appliedCount = selected.Count;
@@ -2753,16 +2754,16 @@ namespace CardGame.Core
                         state.InspectedCards.Add(shield);
                         if (shield.Definition.Type != CardType.Spell ||
                             !_decisions.ChooseOptional(state, ownerId, source, ability)) break;
-                        owner.Shields.Remove(shield);
-                        owner.Resolving.Add(shield);
+                        abilityOwner.Shields.Remove(shield);
+                        abilityOwner.Resolving.Add(shield);
                         state.SpellCastThisTurn[ownerId] = true;
                         shield.ResetTransientZoneState();
                         ResolveSpellCast(state, shield);
-                        owner.Resolving.Remove(shield);
+                        abilityOwner.Resolving.Remove(shield);
                         shield.ResetTransientZoneState();
                         shield.Tapped = shield.Definition.Civilizations.Length > 1;
-                        if (HasKeyword(state, shield, CardKeyword.Charger)) owner.Mana.Add(shield);
-                        else owner.Graveyard.Add(shield);
+                        if (HasKeyword(state, shield, CardKeyword.Charger)) abilityOwner.Mana.Add(shield);
+                        else abilityOwner.Graveyard.Add(shield);
                     }
                     break;
                 case AbilityOperation.ScheduleSelectedUntapAfterBattle:
@@ -2830,7 +2831,7 @@ namespace CardGame.Core
                         var cost = target.Definition.Cost;
                         DestroyCard(state, target);
                         if (!targetOwner.Graveyard.Contains(target)) continue;
-                        var candidates = owner.Deck.Where(card =>
+                        var candidates = abilityOwner.Deck.Where(card =>
                             card.Definition.IsCreature &&
                             card.Definition.Type != CardType.EvolutionCreature &&
                             card.Definition.Cost == cost).ToArray();
@@ -2839,7 +2840,7 @@ namespace CardGame.Core
                         if (recruit != null)
                             MoveCard(state, recruit, RuleZone.BattleZone, false, true, ownerId);
                         if (state.IsFinished) break;
-                        Shuffle(owner.Deck, state, ownerId);
+                        Shuffle(abilityOwner.Deck, state, ownerId);
                     }
                     break;
             }
