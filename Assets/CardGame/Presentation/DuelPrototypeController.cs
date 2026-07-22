@@ -763,10 +763,19 @@ namespace CardGame.Presentation
             GUI.EndScrollView();
         }
 
-        private void DrawCardButton(CardInstance card, Rect rect, bool selected, bool faceDown, Action clicked)
+        private void DrawCardButton(
+            CardInstance card,
+            Rect rect,
+            bool selected,
+            bool faceDown,
+            Action clicked,
+            bool allowWhileViewerOpen = false)
         {
             GUI.backgroundColor = selected ? new Color(1f, 0.75f, 0.15f) : CivilizationColor(card.Definition);
-            if (GUI.Button(rect, GUIContent.none) && !_showHandCardViewer && !_showVideo) clicked();
+            if (GUI.Button(rect, GUIContent.none) &&
+                (allowWhileViewerOpen || !_showHandCardViewer) &&
+                !_showVideo)
+                clicked();
 
             var previousMatrix = GUI.matrix;
             var inset = new Rect(rect.x + 4, rect.y + 4, rect.width - 8, rect.height - 8);
@@ -1149,7 +1158,7 @@ namespace CardGame.Presentation
                     var baseCard = bases[i];
                     var baseRect = new Rect(area.x + i * (baseCardWidth + 10f), area.y + 26f, baseCardWidth, baseCardHeight);
                     DrawCardButton(baseCard, baseRect, _selectedEvolutionBaseId == baseCard.InstanceId, false,
-                        () => _selectedEvolutionBaseId = baseCard.InstanceId);
+                        () => _selectedEvolutionBaseId = baseCard.InstanceId, true);
                 }
                 if (bases.Count == 0)
                     GUI.Label(new Rect(area.x, area.y + 32f, area.width, 48f),
@@ -1176,7 +1185,7 @@ namespace CardGame.Presentation
                 {
                     if (!_selectedManaIds.Add(mana.InstanceId)) _selectedManaIds.Remove(mana.InstanceId);
                     _viewerMessage = $"Selected {_selectedManaIds.Count} of {cost} mana cards.";
-                });
+                }, true);
                 GUI.enabled = true;
                 if (selected)
                 {
