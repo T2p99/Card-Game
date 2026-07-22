@@ -28,6 +28,8 @@ namespace CardGame.Presentation
         };
 
         private readonly Dictionary<string, Texture2D> _cardArt = new Dictionary<string, Texture2D>();
+        private readonly Dictionary<Texture, RenderTexture> _turnedCardArt =
+            new Dictionary<Texture, RenderTexture>();
         private readonly HashSet<string> _artRequests = new HashSet<string>();
         private readonly HashSet<long> _selectedManaIds = new HashSet<long>();
         private readonly HashSet<string> _humanSelectedSets =
@@ -67,6 +69,7 @@ namespace CardGame.Presentation
         private bool _showDeckSetup = true;
         private VideoPlayer _videoPlayer;
         private RenderTexture _videoTexture;
+        private Material _turnCardMaterial;
         private float _uiWidth;
         private float _uiHeight;
         private int _matchSeed;
@@ -98,6 +101,8 @@ namespace CardGame.Presentation
                     _cardBack.LoadImage(Convert.FromBase64String(encodedCardBack.text));
                 }
             }
+            var turnCardShader = Resources.Load<Shader>("CardGame/UI/RotateCard90");
+            if (turnCardShader != null) _turnCardMaterial = new Material(turnCardShader);
             CreateVideoPlayer();
         }
 
@@ -759,8 +764,9 @@ namespace CardGame.Presentation
                 $"{label} ({cards.Count})");
             var inner = new Rect(area.x + 5f, area.y + 25f, area.width - 10f, area.height - 30f);
             var visibleCardHeight = Mathf.Min(122f, inner.height - 7f);
-            var cardWidth = Mathf.Clamp(visibleCardHeight * 0.67f, 58f, 98f);
-            var totalWidth = cards.Count == 0 ? 0f : cards.Count * (cardWidth + 10f) - 10f;
+            var readyCardWidth = Mathf.Clamp(visibleCardHeight * 0.67f, 58f, 98f);
+            var slotWidth = visibleCardHeight;
+            var totalWidth = cards.Count == 0 ? 0f : cards.Count * (slotWidth + 10f) - 10f;
             var contentWidth = Mathf.Max(inner.width - 18f, totalWidth);
             var content = new Rect(0f, 0f, contentWidth, visibleCardHeight);
             var startX = Mathf.Max(0f, (contentWidth - totalWidth) * 0.5f);
@@ -768,7 +774,10 @@ namespace CardGame.Presentation
             for (var i = 0; i < cards.Count; i++)
             {
                 var card = cards[i];
-                var rect = new Rect(startX + i * (cardWidth + 10f), 0f, cardWidth, content.height);
+                var slot = new Rect(startX + i * (slotWidth + 10f), 0f, slotWidth, content.height);
+                var rect = card.Tapped
+                    ? new Rect(slot.x, slot.center.y - readyCardWidth * 0.5f, slot.width, readyCardWidth)
+                    : new Rect(slot.center.x - readyCardWidth * 0.5f, slot.y, readyCardWidth, slot.height);
                 DrawCardButton(card, rect, selected == card, faceDown, () => onClick(card));
             }
             GUI.EndScrollView();
@@ -795,24 +804,16 @@ namespace CardGame.Presentation
                 GUI.Box(rect, GUIContent.none);
             }
 
-            var previousMatrix = GUI.matrix;
             var inset = new Rect(rect.x + 4, rect.y + 4, rect.width - 8, rect.height - 8);
-            if (card.Tapped)
-            {
-                var turnedHeight = Mathf.Max(20f, rect.width - 8f);
-                var turnedWidth = turnedHeight * 0.66f;
-                inset = new Rect(rect.center.x - turnedWidth * 0.5f, rect.center.y - turnedHeight * 0.5f,
-                    turnedWidth, turnedHeight);
-                GUIUtility.RotateAroundPivot(90f, rect.center);
-            }
-
-            if (faceDown && _cardBack != null)
-            {
-                GUI.DrawTexture(inset, _cardBack, ScaleMode.ScaleToFit);
-            }
+            Texture cardTexture = null;
+            if (faceDown && _cardBack != null) cardTexture = _cardBack;
             else if (!faceDown && _cardArt.TryGetValue(card.Definition.Id, out var texture))
+                cardTexture = texture;
+
+            if (cardTexture != null)
             {
-                GUI.DrawTexture(inset, texture, ScaleMode.ScaleToFit);
+                var displayTexture = card.Tapped ? GetTurnedCardArt(cardTexture) : cardTexture;
+                GUI.DrawTexture(inset, displayTexture, ScaleMode.ScaleToFit);
             }
             else
             {
@@ -826,13 +827,33 @@ namespace CardGame.Presentation
                 }
             }
 
-            GUI.matrix = previousMatrix;
             if (card.Tapped)
             {
                 GUI.color = new Color(0, 0, 0, 0.72f);
                 GUI.Box(new Rect(rect.x + 7f, rect.center.y - 13f, rect.width - 14f, 26f), "TURNED");
             }
             GUI.color = Color.white;
+        }
+
+        private Texture GetTurnedCardArt(Texture source)
+        {
+            if (source == null || _turnCardMaterial == null) return source;
+            if (_turnedCardArt.TryGetValue(source, out var cached)) return cached;
+            if (Event.current.type != EventType.Repaint) return source;
+
+            const int previewWidth = 256;
+            var previewHeight = Mathf.Max(1,
+                Mathf.RoundToInt(previewWidth * (float)source.width / Mathf.Max(1, source.height)));
+            var turned = new RenderTexture(previewWidth, previewHeight, 0, RenderTextureFormat.ARGB32)
+            {
+                name = $"Turned {source.name}",
+                filterMode = FilterMode.Bilinear,
+                wrapMode = TextureWrapMode.Clamp
+            };
+            turned.Create();
+            Graphics.Blit(source, turned, _turnCardMaterial);
+            _turnedCardArt[source] = turned;
+            return turned;
         }
 
         private void DrawControlPanel()
@@ -1550,6 +1571,10 @@ namespace CardGame.Presentation
         private void OnDestroy()
         {
             if (_videoTexture != null) _videoTexture.Release();
+            foreach (var turned in _turnedCardArt.Values)
+                if (turned != null) turned.Release();
+            _turnedCardArt.Clear();
+            if (_turnCardMaterial != null) Destroy(_turnCardMaterial);
         }
     }
 }
