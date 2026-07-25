@@ -102,9 +102,11 @@ namespace CardGame.Core.Tests
             var state = EmptyState();
             var spell = Instance(10, StarterDeckCatalog.Cards["dm01-063"]);
             var target = Instance(20, Creature("target", 9000));
+            var availableMana = Instance(30, Creature("available-mana", 1000));
             state.Players[1].Hand.Add(spell);
             state.PendingShieldTriggers.Add(spell);
             state.Players[0].BattleZone.Add(target);
+            state.Players[1].Mana.Add(availableMana);
 
             var result = new RulesEngine().CastShieldTrigger(state, 1, spell.InstanceId, target.InstanceId);
 
@@ -112,6 +114,28 @@ namespace CardGame.Core.Tests
             Assert.That(state.PendingShieldTriggers, Is.Empty);
             Assert.That(state.Players[0].BattleZone, Is.Empty);
             Assert.That(state.Players[1].Graveyard, Has.Member(spell));
+            Assert.That(availableMana.Tapped, Is.False,
+                "Playing a shield trigger must not spend or turn mana.");
+        }
+
+        [Test]
+        public void DeclinedShieldTrigger_RemainsInHandWithoutSpendingMana()
+        {
+            var state = EmptyState();
+            var engine = new RulesEngine();
+            var spell = Instance(10, StarterDeckCatalog.Cards["dm01-063"]);
+            var availableMana = Instance(30, Creature("available-mana", 1000));
+            state.Players[1].Hand.Add(spell);
+            state.Players[1].Mana.Add(availableMana);
+            state.PendingShieldTriggers.Add(spell);
+
+            var result = engine.DeclineShieldTrigger(state, 1,
+                spell.InstanceId);
+
+            Assert.That(result.Success, Is.True);
+            Assert.That(state.PendingShieldTriggers, Has.No.Member(spell));
+            Assert.That(state.Players[1].Hand, Has.Member(spell));
+            Assert.That(availableMana.Tapped, Is.False);
         }
 
         private static GameState EmptyState()

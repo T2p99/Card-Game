@@ -667,10 +667,21 @@ namespace CardGame.Presentation
             {
                 var card = cards[i];
                 var rect = new Rect(startX + i * stride, 0f, cardWidth, cardHeight);
-                DrawCardButton(card, rect, _selectedHand == card, false, () =>
+                var pendingShieldTrigger = _state.PendingShieldTriggers.Contains(card);
+                DrawCardButton(card, rect,
+                    _selectedHand == card || pendingShieldTrigger, false, () =>
                 {
-                    if (!_busy && _state.ActivePlayerId == HumanId) OpenHandCardViewer(card);
+                    if (pendingShieldTrigger ||
+                        (!_busy && _state.ActivePlayerId == HumanId))
+                        OpenHandCardViewer(card);
                 });
+                if (pendingShieldTrigger)
+                {
+                    GUI.color = new Color(1f, 0.78f, 0.12f);
+                    GUI.Box(new Rect(rect.x + 3f, rect.yMax - 27f,
+                        rect.width - 6f, 24f), "TRIGGER • 0 MANA");
+                    GUI.color = Color.white;
+                }
             }
             GUI.EndScrollView();
         }
@@ -942,9 +953,10 @@ namespace CardGame.Presentation
             if (_state.PendingShieldTriggers.Count > 0 && _state.ActivePlayerId == ComputerId)
             {
                 GUILayout.Space(12);
-                GUILayout.Label("Shield Trigger!");
+                GUILayout.Label("SHIELD TRIGGER — play now for 0 mana.");
                 foreach (var trigger in _state.PendingShieldTriggers.ToArray())
-                    if (GUILayout.Button($"Cast {trigger.Definition.Name}")) CastHumanShieldTrigger(trigger);
+                    if (GUILayout.Button($"PLAY {trigger.Definition.Name} — 0 MANA"))
+                        CastHumanShieldTrigger(trigger);
                 if (GUILayout.Button("Skip Remaining Triggers"))
                     ShowResult(_engine.ResolvePendingShieldTriggers(_state, HumanId));
             }
@@ -966,7 +978,21 @@ namespace CardGame.Presentation
             _selectedManaIds.Clear();
             _selectedEvolutionBaseId = 0;
             _selectedSpellTargetId = 0;
-            _viewerMessage = string.Empty;
+            var pendingShieldTrigger = _state.PendingShieldTriggers.Contains(card);
+            if (pendingShieldTrigger && card.Definition.Type == CardType.Spell &&
+                _engine.SpellUsesSingleCardTarget(card.Definition))
+            {
+                var candidates = _engine.GetSpellTargetCandidates(_state, HumanId,
+                    card.InstanceId);
+                if (_selectedOpponentCreature != null &&
+                    candidates.Contains(_selectedOpponentCreature))
+                    _selectedSpellTargetId = _selectedOpponentCreature.InstanceId;
+                else if (candidates.Count == 1)
+                    _selectedSpellTargetId = candidates[0].InstanceId;
+            }
+            _viewerMessage = pendingShieldTrigger
+                ? "Shield trigger ready — play this card immediately for 0 mana."
+                : string.Empty;
         }
 
         private void OpenFaceUpCardViewer(CardInstance card, IReadOnlyList<CardInstance> cards, string zoneName)
@@ -1085,7 +1111,16 @@ namespace CardGame.Presentation
                 GUI.Label(new Rect(infoRect.x, infoRect.y + 258f, infoRect.width, 54f), _viewerMessage, messageStyle);
             }
 
-            if (_selectingManaPayment && _viewerAllowsHandActions)
+            var pendingShieldTrigger = _viewerAllowsHandActions &&
+                                       _state.PendingShieldTriggers.Contains(
+                                           _selectedHand);
+            if (pendingShieldTrigger)
+            {
+                DrawShieldTriggerActions(new Rect(infoRect.x,
+                    infoRect.y + 314f, infoRect.width,
+                    infoRect.height - 314f), bodyStyle);
+            }
+            else if (_selectingManaPayment && _viewerAllowsHandActions)
             {
                 DrawManaPaymentSelector(new Rect(infoRect.x, infoRect.y + 314f, infoRect.width, infoRect.height - 314f));
             }
@@ -1107,6 +1142,123 @@ namespace CardGame.Presentation
                 else
                     GUI.Label(new Rect(infoRect.x, infoRect.yMax - 66f, infoRect.width, 44f),
                         "Face-up zone viewer — use the arrows to inspect the other cards in this zone.", bodyStyle);
+            }
+        }
+
+        private void DrawShieldTriggerActions(Rect area, GUIStyle bodyStyle)
+        {
+            var trigger = _selectedHand;
+            GUI.Box(area, GUIContent.none);
+            var headingStyle = new GUIStyle(bodyStyle)
+            {
+                fontStyle = FontStyle.Bold
+            };
+            headingStyle.normal.textColor = new Color(1f, 0.82f, 0.22f);
+            GUI.Label(new Rect(area.x + 10f, area.y + 8f,
+                area.width - 20f, 28f),
+                "SHIELD TRIGGER — NO MANA PAYMENT", headingStyle);
+            GUI.Label(new Rect(area.x + 10f, area.y + 38f,
+                area.width - 20f, 44f),
+                "Play it now for 0 mana, or decline and keep the broken shield in your hand.",
+                bodyStyle);
+
+            var usesTarget = trigger.Definition.Type == CardType.Spell &&
+                             _engine.SpellUsesSingleCardTarget(
+                                 trigger.Definition);
+            var requiresTarget = usesTarget &&
+                                 _engine.SpellRequiresSingleCardTarget(
+                                     trigger.Definition);
+            IReadOnlyList<CardInstance> targets = Array.Empty<CardInstance>();
+            var actionTop = area.y + 88f;
+            if (usesTarget)
+            {
+                targets = _engine.GetSpellTargetCandidates(_state, HumanId,
+                    trigger.InstanceId);
+                if (_selectedSpellTargetId != 0 && !targets.Any(card =>
+                        card.InstanceId == _selectedSpellTargetId))
+                    _selectedSpellTargetId = 0;
+                if (_selectedSpellTargetId == 0 && targets.Count == 1)
+                    _selectedSpellTargetId = targets[0].InstanceId;
+
+                var targetMessage = targets.Count == 0
+                    ? "No legal target is currently available."
+                    : _selectedSpellTargetId == 0
+                        ? "Choose the card affected by this shield trigger:"
+                        : $"Target: {targets.First(card => card.InstanceId == _selectedSpellTargetId).Definition.Name}";
+                GUI.Label(new Rect(area.x + 10f, actionTop,
+                    area.width - 20f, 28f), targetMessage, bodyStyle);
+
+                var viewport = new Rect(area.x + 8f, actionTop + 30f,
+                    area.width - 16f, 100f);
+                GUI.Box(viewport, GUIContent.none);
+                const float slotWidth = 108f;
+                const float slotHeight = 80f;
+                var content = new Rect(0f, 0f,
+                    Mathf.Max(viewport.width - 18f,
+                        targets.Count * slotWidth), slotHeight);
+                _spellTargetScroll = GUI.BeginScrollView(viewport,
+                    _spellTargetScroll, content);
+                for (var i = 0; i < targets.Count; i++)
+                {
+                    var target = targets[i];
+                    var slot = new Rect(i * slotWidth, 0f,
+                        slotWidth - 8f, slotHeight);
+                    var uprightWidth = slotHeight * 0.67f;
+                    var targetRect = target.Tapped
+                        ? new Rect(slot.x + 4f,
+                            slot.center.y - uprightWidth * 0.5f,
+                            slotHeight, uprightWidth)
+                        : new Rect(slot.center.x - uprightWidth * 0.5f,
+                            slot.y, uprightWidth, slotHeight);
+                    DrawCardButton(target, targetRect,
+                        _selectedSpellTargetId == target.InstanceId, false,
+                        () =>
+                        {
+                            _selectedSpellTargetId = target.InstanceId;
+                            if (_state.Players[ComputerId].BattleZone.Contains(target))
+                                _selectedOpponentCreature = target;
+                            _viewerMessage = $"Selected {target.Definition.Name} as the shield-trigger target.";
+                        }, true);
+                }
+                GUI.EndScrollView();
+            }
+
+            var playRect = new Rect(area.x + 8f, area.yMax - 58f,
+                area.width * 0.62f, 50f);
+            var declineRect = new Rect(area.x + area.width * 0.66f,
+                area.yMax - 58f, area.width * 0.34f - 8f, 50f);
+            GUI.enabled = !requiresTarget || _selectedSpellTargetId != 0;
+            if (GUI.Button(playRect, "PLAY FOR 0 MANA"))
+            {
+                var result = CastHumanShieldTrigger(trigger,
+                    _selectedSpellTargetId);
+                if (result.Success)
+                {
+                    _selectedHand = null;
+                    CloseHandCardViewer();
+                }
+                else
+                {
+                    _viewerMessage = result.Error;
+                }
+            }
+            GUI.enabled = true;
+            if (GUI.Button(declineRect, "DECLINE"))
+            {
+                var result = _engine.DeclineShieldTrigger(_state, HumanId,
+                    trigger.InstanceId);
+                ShowResult(result, result.Success
+                    ? $"Kept {trigger.Definition.Name} in your hand."
+                    : null);
+                if (result.Success)
+                {
+                    _selectedHand = null;
+                    CloseHandCardViewer();
+                }
+                else
+                {
+                    _viewerMessage = result.Error;
+                }
             }
         }
 
@@ -1515,18 +1667,33 @@ namespace CardGame.Presentation
             if (result.Success) _awaitingHumanBlock = false;
         }
 
-        private void CastHumanShieldTrigger(CardInstance trigger)
+        private RuleResult CastHumanShieldTrigger(CardInstance trigger,
+            long preferredTarget = 0)
         {
-            var candidates = _state.Players[ComputerId].BattleZone.Select(card => card.InstanceId)
-                .Concat(_state.Players[HumanId].Graveyard.Where(card => card.Definition.IsCreature).Select(card => card.InstanceId))
-                .Concat(new long[] { 0 });
+            var candidates = new List<long>();
+            if (preferredTarget != 0) candidates.Add(preferredTarget);
+            if (trigger.Definition.Type == CardType.Spell)
+                candidates.AddRange(_engine.GetSpellTargetCandidates(_state,
+                    HumanId, trigger.InstanceId).Select(card => card.InstanceId));
+            candidates.AddRange(_state.Players[ComputerId].BattleZone
+                .Select(card => card.InstanceId));
+            candidates.AddRange(_state.Players[HumanId].BattleZone
+                .Select(card => card.InstanceId));
+            candidates.AddRange(_state.Players[HumanId].Graveyard
+                .Where(card => card.Definition.IsCreature)
+                .Select(card => card.InstanceId));
+            candidates.Add(0);
             RuleResult last = null;
-            foreach (var target in candidates)
+            foreach (var target in candidates.Distinct())
             {
                 last = _engine.CastShieldTrigger(_state, HumanId, trigger.InstanceId, target);
                 if (last.Success) break;
             }
-            ShowResult(last ?? RuleResult.Fail("No legal shield-trigger target."));
+            last ??= RuleResult.Fail("No legal shield-trigger target.");
+            ShowResult(last, last.Success
+                ? $"Played {trigger.Definition.Name} for 0 mana."
+                : null);
+            return last;
         }
 
         private void ResolveComputerShieldTriggers()

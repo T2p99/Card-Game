@@ -390,6 +390,24 @@ namespace CardGame.Core
             return RuleResult.Ok();
         }
 
+        public RuleResult DeclineShieldTrigger(
+            GameState state,
+            int defendingPlayerId,
+            long cardInstanceId)
+        {
+            if (state == null || state.IsFinished)
+                return RuleResult.Fail("The game is already finished.");
+            if (defendingPlayerId < 0 || defendingPlayerId >= state.Players.Length)
+                return RuleResult.Fail("Unknown player.");
+            var card = Find(state.PendingShieldTriggers, cardInstanceId);
+            if (card == null || !state.Players[defendingPlayerId].Hand.Contains(card))
+                return RuleResult.Fail("The selected card is not a pending shield trigger.");
+
+            state.PendingShieldTriggers.Remove(card);
+            card.BrokenByAttackerInstanceId = 0;
+            return RuleResult.Ok();
+        }
+
         private RuleResult SummonShieldTriggerCreature(GameState state, int playerId,
             CardInstance creature, long evolutionBaseInstanceId,
             CardInstance triggeringAttacker)

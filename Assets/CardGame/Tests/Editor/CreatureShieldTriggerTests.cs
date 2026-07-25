@@ -12,9 +12,11 @@ namespace CardGame.Core.Tests
             var state = EmptyState();
             var surfer = Instance(10, "dm05-16-55");
             var target = Instance(20, Creature("target"));
+            var availableMana = Instance(30, Creature("available-mana"));
             state.Players[1].Hand.Add(surfer);
             state.PendingShieldTriggers.Add(surfer);
             state.Players[0].BattleZone.Add(target);
+            state.Players[1].Mana.Add(availableMana);
 
             var result = new RulesEngine(new TargetCardDecisionProvider(target.InstanceId))
                 .CastShieldTrigger(state, 1, surfer.InstanceId);
@@ -23,6 +25,8 @@ namespace CardGame.Core.Tests
             Assert.That(state.Players[1].BattleZone, Does.Contain(surfer));
             Assert.That(state.Players[0].Hand, Does.Contain(target));
             Assert.That(state.PendingShieldTriggers, Has.No.Member(surfer));
+            Assert.That(availableMana.Tapped, Is.False,
+                "Creature shield triggers must also play without mana.");
         }
 
         [Test]
