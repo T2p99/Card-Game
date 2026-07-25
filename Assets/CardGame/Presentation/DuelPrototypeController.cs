@@ -60,6 +60,7 @@ namespace CardGame.Presentation
         private Vector2 _manaSelectionScroll;
         private Vector2 _spellTargetScroll;
         private Vector2 _battleActionScroll;
+        private Vector2 _controlPanelScroll;
         private string _message = "Choose a card, charge mana, and summon a creature.";
         private string _viewerMessage = string.Empty;
         private bool _busy;
@@ -410,6 +411,7 @@ namespace CardGame.Presentation
                 _manaSelectionScroll = Vector2.zero;
                 _spellTargetScroll = Vector2.zero;
                 _battleActionScroll = Vector2.zero;
+                _controlPanelScroll = Vector2.zero;
                 _artRequests.Clear();
                 StartCoroutine(PreloadDeckArt(humanDeck.Concat(computerDeck).ToArray()));
             }
@@ -877,93 +879,232 @@ namespace CardGame.Presentation
             var rect = new Rect(1296f, 56f, 288f, 832f);
             GUI.backgroundColor = new Color(0.13f, 0.16f, 0.21f);
             GUI.Box(rect, GUIContent.none);
-            GUILayout.BeginArea(new Rect(rect.x + 10, rect.y + 10, rect.width - 20, rect.height - 20));
+
+            var viewport = new Rect(rect.x + 10f, rect.y + 10f, rect.width - 20f, rect.height - 20f);
+            var contentWidth = viewport.width - 18f;
             var wrapStyle = new GUIStyle(GUI.skin.label) { wordWrap = true };
             var panelHeadingStyle = new GUIStyle(wrapStyle)
             {
                 fontSize = 17,
                 fontStyle = FontStyle.Bold
             };
-            GUILayout.Label("DUEL CONTROLS", panelHeadingStyle);
-            GUILayout.Label($"Your pool: {_humanDeckLabel} • {_humanCivilizationLabel}", wrapStyle);
-            GUILayout.Label($"Computer: {_computerDeckLabel} • {_computerCivilizationLabel}", wrapStyle);
-            GUILayout.Space(6);
 
             var selected = _selectedHand ?? _selectedCreature ?? _selectedOpponentCreature;
+            var selectedHand = _selectedHand;
+            var selectedCreature = _selectedCreature;
+            var modalOpen = _showHandCardViewer || _showVideo;
+            var legalCreatureTargets = selectedCreature != null && !selectedCreature.Tapped
+                ? _state.Players[ComputerId].BattleZone
+                    .Where(card => card.Tapped ||
+                                   selectedCreature.Definition.HasKeyword(CardKeyword.AttackUntappedCreature))
+                    .ToArray()
+                : Array.Empty<CardInstance>();
+            var readyBlockers = selectedCreature != null && !selectedCreature.Tapped
+                ? EligibleBlockers(_state.Players[ComputerId]).Count()
+                : 0;
+            var humanBlockers = _awaitingHumanBlock
+                ? EligibleBlockers(_state.Players[HumanId]).ToArray()
+                : Array.Empty<CardInstance>();
+            var pendingTriggers = _state.PendingShieldTriggers.Count > 0 &&
+                                  _state.ActivePlayerId == ComputerId
+                ? _state.PendingShieldTriggers.ToArray()
+                : Array.Empty<CardInstance>();
+
+            var estimatedHeight = 38f +
+                                  PanelTextHeight($"Your pool: {_humanDeckLabel} • {_humanCivilizationLabel}",
+                                      wrapStyle, contentWidth) +
+                                  PanelTextHeight($"Computer: {_computerDeckLabel} • {_computerCivilizationLabel}",
+                                      wrapStyle, contentWidth) + 18f;
             if (selected != null)
             {
-                GUILayout.Label(selected.Definition.Name);
-                GUILayout.Label($"Cost {selected.Definition.Cost}  •  Power {selected.Definition.Power}");
-                GUILayout.Label(selected.Definition.RulesText, wrapStyle);
-                GUILayout.Space(8);
+                estimatedHeight += PanelTextHeight(selected.Definition.Name, wrapStyle, contentWidth) +
+                                   PanelTextHeight(
+                                       $"Cost {selected.Definition.Cost}  •  Power {selected.Definition.Power}",
+                                       wrapStyle, contentWidth) +
+                                   PanelTextHeight(selected.Definition.RulesText, wrapStyle, contentWidth) + 18f;
             }
 
-            if (_showHandCardViewer || _showVideo)
+            if (modalOpen)
             {
-                GUILayout.FlexibleSpace();
-                GUILayout.Label("Close the card viewer before choosing a board action.");
-                GUILayout.EndArea();
-                return;
+                estimatedHeight += PanelTextHeight(
+                    "Close the card viewer before choosing a board action.",
+                    wrapStyle, contentWidth) + 18f;
             }
-
-            GUI.enabled = !_busy && !_state.IsFinished && _state.ActivePlayerId == HumanId;
-            if (_selectedHand != null)
+            else
             {
-                if (GUILayout.Button("Open Selected Card", GUILayout.Height(38))) _showHandCardViewer = true;
-            }
-            if (_selectedCreature != null)
-            {
-                if (_selectedCreature.Tapped)
+                if (selectedHand != null) estimatedHeight += 44f;
+                if (selectedCreature != null)
                 {
-                    GUILayout.Label("TURNED — this creature cannot attack again this turn.");
-                }
-                else
-                {
-                    if (GUILayout.Button("Attack Player", GUILayout.Height(38)))
-                        StartHumanAttack(AttackTargetKind.Player, 0);
-
-                    var canAttackUntapped = _selectedCreature.Definition.HasKeyword(CardKeyword.AttackUntappedCreature);
-                    var legalCreatureTargets = _state.Players[ComputerId].BattleZone
-                        .Where(card => card.Tapped || canAttackUntapped).ToList();
-                    foreach (var target in legalCreatureTargets)
+                    if (selectedCreature.Tapped)
                     {
-                        if (GUILayout.Button($"Attack {target.Definition.Name} — {target.Definition.Power}", GUILayout.Height(40)))
-                            StartHumanAttack(AttackTargetKind.Creature, target.InstanceId);
+                        estimatedHeight += PanelTextHeight(
+                            "TURNED — this creature cannot attack again this turn.",
+                            wrapStyle, contentWidth) + 8f;
                     }
+                    else
+                    {
+                        estimatedHeight += 44f + legalCreatureTargets.Length * 46f;
+                        if (readyBlockers > 0)
+                            estimatedHeight += PanelTextHeight(
+                                $"Opponent has {readyBlockers} ready Blocker(s). Attack the player or a legal turned creature; the opponent chooses which ready Blocker intercepts.",
+                                wrapStyle, contentWidth) + 8f;
+                        if (legalCreatureTargets.Length == 0 &&
+                            _state.Players[ComputerId].BattleZone.Count > 0)
+                            estimatedHeight += PanelTextHeight(
+                                "No opposing creature is currently a legal attack target. Normally, only turned creatures can be attacked.",
+                                wrapStyle, contentWidth) + 8f;
+                    }
+                }
 
-                    var readyBlockers = EligibleBlockers(_state.Players[ComputerId]).Count();
-                    if (readyBlockers > 0)
-                        GUILayout.Label($"Opponent has {readyBlockers} ready Blocker(s). Attack the player or a legal turned creature; the opponent chooses which ready Blocker intercepts.");
-                    if (legalCreatureTargets.Count == 0 && _state.Players[ComputerId].BattleZone.Count > 0)
-                        GUILayout.Label("No opposing creature is currently a legal attack target. Normally, only turned creatures can be attacked.");
+                estimatedHeight += 44f;
+                if (_awaitingHumanBlock)
+                {
+                    estimatedHeight += 18f +
+                                       PanelTextHeight("The computer is attacking. Choose a blocker:",
+                                           wrapStyle, contentWidth) +
+                                       humanBlockers.Length * 40f + 40f;
+                }
+
+                if (pendingTriggers.Length > 0)
+                {
+                    estimatedHeight += 18f +
+                                       PanelTextHeight("SHIELD TRIGGER — play now for 0 mana.",
+                                           wrapStyle, contentWidth) +
+                                       pendingTriggers.Length * 42f + 42f;
                 }
             }
-            if (GUILayout.Button("End Turn", GUILayout.Height(38))) EndHumanTurn();
+
+            const string footer =
+                "Prototype: hand cards use manual mana selection. Single-card spell targets are chosen in the card viewer.";
+            estimatedHeight += PanelTextHeight(footer, wrapStyle, contentWidth) + 28f;
+            var contentHeight = Mathf.Max(viewport.height - 4f, estimatedHeight);
+            _controlPanelScroll = GUI.BeginScrollView(
+                viewport,
+                _controlPanelScroll,
+                new Rect(0f, 0f, contentWidth, contentHeight));
+
+            var y = 0f;
+            DrawPanelLabel(ref y, contentWidth, "DUEL CONTROLS", panelHeadingStyle, 28f, 2f);
+            DrawPanelLabel(ref y, contentWidth,
+                $"Your pool: {_humanDeckLabel} • {_humanCivilizationLabel}", wrapStyle, 22f, 2f);
+            DrawPanelLabel(ref y, contentWidth,
+                $"Computer: {_computerDeckLabel} • {_computerCivilizationLabel}", wrapStyle, 22f, 8f);
+
+            if (selected != null)
+            {
+                DrawPanelLabel(ref y, contentWidth, selected.Definition.Name, wrapStyle, 22f, 2f);
+                DrawPanelLabel(ref y, contentWidth,
+                    $"Cost {selected.Definition.Cost}  •  Power {selected.Definition.Power}",
+                    wrapStyle, 22f, 2f);
+                DrawPanelLabel(ref y, contentWidth, selected.Definition.RulesText, wrapStyle, 22f, 10f);
+            }
+
+            if (modalOpen)
+            {
+                DrawPanelLabel(ref y, contentWidth,
+                    "Close the card viewer before choosing a board action.",
+                    wrapStyle, 22f, 12f);
+            }
+            else
+            {
+                GUI.enabled = !_busy && !_state.IsFinished && _state.ActivePlayerId == HumanId;
+                if (selectedHand != null &&
+                    DrawPanelButton(ref y, contentWidth, "Open Selected Card", 38f, 6f))
+                    _showHandCardViewer = true;
+
+                if (selectedCreature != null)
+                {
+                    if (selectedCreature.Tapped)
+                    {
+                        DrawPanelLabel(ref y, contentWidth,
+                            "TURNED — this creature cannot attack again this turn.",
+                            wrapStyle, 22f, 8f);
+                    }
+                    else
+                    {
+                        if (DrawPanelButton(ref y, contentWidth, "Attack Player", 38f, 6f))
+                            StartHumanAttack(AttackTargetKind.Player, 0);
+
+                        foreach (var target in legalCreatureTargets)
+                            if (DrawPanelButton(ref y, contentWidth,
+                                    $"Attack {target.Definition.Name} — {target.Definition.Power}", 40f, 6f))
+                                StartHumanAttack(AttackTargetKind.Creature, target.InstanceId);
+
+                        if (readyBlockers > 0)
+                            DrawPanelLabel(ref y, contentWidth,
+                                $"Opponent has {readyBlockers} ready Blocker(s). Attack the player or a legal turned creature; the opponent chooses which ready Blocker intercepts.",
+                                wrapStyle, 22f, 8f);
+                        if (legalCreatureTargets.Length == 0 &&
+                            _state.Players[ComputerId].BattleZone.Count > 0)
+                            DrawPanelLabel(ref y, contentWidth,
+                                "No opposing creature is currently a legal attack target. Normally, only turned creatures can be attacked.",
+                                wrapStyle, 22f, 8f);
+                    }
+                }
+
+                if (DrawPanelButton(ref y, contentWidth, "End Turn", 38f, 6f)) EndHumanTurn();
+                GUI.enabled = true;
+
+                if (_awaitingHumanBlock)
+                {
+                    y += 12f;
+                    DrawPanelLabel(ref y, contentWidth,
+                        "The computer is attacking. Choose a blocker:", wrapStyle, 22f, 4f);
+                    foreach (var blocker in humanBlockers)
+                        if (DrawPanelButton(ref y, contentWidth,
+                                $"Block with {blocker.Definition.Name}", 34f, 6f))
+                            ResolveHumanBlock(blocker.InstanceId);
+                    if (DrawPanelButton(ref y, contentWidth, "Do Not Block", 34f, 6f))
+                        ResolveHumanBlock(0);
+                }
+
+                if (pendingTriggers.Length > 0)
+                {
+                    y += 12f;
+                    DrawPanelLabel(ref y, contentWidth,
+                        "SHIELD TRIGGER — play now for 0 mana.", wrapStyle, 22f, 4f);
+                    foreach (var trigger in pendingTriggers)
+                        if (DrawPanelButton(ref y, contentWidth,
+                                $"PLAY {trigger.Definition.Name} — 0 MANA", 36f, 6f))
+                            CastHumanShieldTrigger(trigger);
+                    if (DrawPanelButton(ref y, contentWidth, "Skip Remaining Triggers", 36f, 6f))
+                        ShowResult(_engine.ResolvePendingShieldTriggers(_state, HumanId));
+                }
+            }
+
+            y += 12f;
+            DrawPanelLabel(ref y, contentWidth, footer, wrapStyle, 22f, 4f);
+            GUI.EndScrollView();
             GUI.enabled = true;
+        }
 
-            if (_awaitingHumanBlock)
-            {
-                GUILayout.Space(12);
-                GUILayout.Label("The computer is attacking. Choose a blocker:");
-                foreach (var blocker in EligibleBlockers(_state.Players[HumanId]))
-                    if (GUILayout.Button($"Block with {blocker.Definition.Name}")) ResolveHumanBlock(blocker.InstanceId);
-                if (GUILayout.Button("Do Not Block")) ResolveHumanBlock(0);
-            }
+        private static float PanelTextHeight(string text, GUIStyle style, float width) =>
+            Mathf.Max(22f, style.CalcHeight(new GUIContent(text ?? string.Empty), width));
 
-            if (_state.PendingShieldTriggers.Count > 0 && _state.ActivePlayerId == ComputerId)
-            {
-                GUILayout.Space(12);
-                GUILayout.Label("SHIELD TRIGGER — play now for 0 mana.");
-                foreach (var trigger in _state.PendingShieldTriggers.ToArray())
-                    if (GUILayout.Button($"PLAY {trigger.Definition.Name} — 0 MANA"))
-                        CastHumanShieldTrigger(trigger);
-                if (GUILayout.Button("Skip Remaining Triggers"))
-                    ShowResult(_engine.ResolvePendingShieldTriggers(_state, HumanId));
-            }
+        private static void DrawPanelLabel(
+            ref float y,
+            float width,
+            string text,
+            GUIStyle style,
+            float minimumHeight,
+            float spacingAfter)
+        {
+            var height = Mathf.Max(minimumHeight,
+                style.CalcHeight(new GUIContent(text ?? string.Empty), width));
+            GUI.Label(new Rect(0f, y, width, height), text, style);
+            y += height + spacingAfter;
+        }
 
-            GUILayout.FlexibleSpace();
-            GUILayout.Label("Prototype: hand cards use manual mana selection. Single-card spell targets are chosen in the card viewer.");
-            GUILayout.EndArea();
+        private static bool DrawPanelButton(
+            ref float y,
+            float width,
+            string text,
+            float height,
+            float spacingAfter)
+        {
+            var pressed = GUI.Button(new Rect(0f, y, width, height), text);
+            y += height + spacingAfter;
+            return pressed;
         }
 
         private void OpenHandCardViewer(CardInstance card)
