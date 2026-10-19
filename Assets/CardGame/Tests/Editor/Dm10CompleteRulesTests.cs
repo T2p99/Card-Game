@@ -349,6 +349,76 @@ namespace CardGame.Core.Tests
                 state, aquaRider, CardKeyword.Blocker), Is.True);
         }
 
+        [TestCase(false)]
+        [TestCase(true)]
+        public void SupersonicJetPack_NewMigasaCanAttackOrUseTapAbility(bool useTapAbility)
+        {
+            var state = EmptyState();
+            var engine = new RulesEngine();
+            var migasa = Instance(10, "dm06-82-110");
+            var jetPack = Instance(11, "dm10-76-110");
+            var firstFire = Instance(40, Creature("first-fire", Civilization.Fire));
+            var chosenFire = Instance(41, Creature("chosen-fire", Civilization.Fire));
+            var waterCreature = Instance(42, Creature("water-creature", Civilization.Water));
+            state.Players[0].Hand.Add(migasa);
+            state.Players[0].Hand.Add(jetPack);
+            state.Players[0].BattleZone.Add(firstFire);
+            state.Players[0].BattleZone.Add(chosenFire);
+            state.Players[0].BattleZone.Add(waterCreature);
+            for (var id = 20; id < 24; id++)
+                state.Players[0].Mana.Add(Instance(id,
+                    Creature($"fire-mana-{id}", Civilization.Fire)));
+            state.Players[1].Shields.Add(Instance(30, Creature("shield")));
+            state.Players[1].Deck.Add(Instance(31, Creature("draw")));
+            state.Players[1].Deck.Add(Instance(32, Creature("deck-filler")));
+
+            Assert.That(engine.SummonCreature(state, 0, migasa.InstanceId,
+                new long[] { 20, 21, 22 }).Success, Is.True);
+            Assert.That(engine.HasSummoningSickness(state, migasa), Is.True);
+            Assert.That(engine.DeclareAttack(state, 0, migasa.InstanceId,
+                AttackTargetKind.Player).Success, Is.False);
+            Assert.That(engine.UseTapAbility(state, 0, migasa.InstanceId,
+                chosenFire.InstanceId).Success, Is.False);
+            Assert.That(migasa.Tapped, Is.False);
+
+            Assert.That(engine.CastSpell(state, 0, jetPack.InstanceId,
+                new long[] { 23 }, migasa.InstanceId).Success, Is.True);
+            Assert.That(migasa.Definition.HasKeyword(CardKeyword.SpeedAttacker), Is.False,
+                "The viewer must account for granted abilities, not just printed keywords.");
+            Assert.That(engine.HasSummoningSickness(state, migasa), Is.False);
+            if (useTapAbility)
+            {
+                Assert.That(engine.GetTapAbilityTargetCandidates(state, 0, migasa.InstanceId),
+                    Is.EquivalentTo(new[] { migasa, firstFire, chosenFire }));
+                Assert.That(engine.UseTapAbility(state, 0, migasa.InstanceId,
+                    waterCreature.InstanceId).Success, Is.False);
+                Assert.That(migasa.Tapped, Is.False,
+                    "An invalid target must not consume the tap ability.");
+                Assert.That(engine.UseTapAbility(state, 0, migasa.InstanceId,
+                    chosenFire.InstanceId).Success, Is.True);
+                Assert.That(migasa.Tapped, Is.True);
+                Assert.That(state.PendingAttack, Is.Null);
+                var resolver = new AbilityResolver();
+                Assert.That(resolver.HasKeyword(state, chosenFire, CardKeyword.DoubleBreaker), Is.True);
+                Assert.That(resolver.HasKeyword(state, firstFire, CardKeyword.DoubleBreaker), Is.False);
+                Assert.That(resolver.HasKeyword(state, migasa, CardKeyword.DoubleBreaker), Is.False);
+                Assert.That(engine.DeclareAttack(state, 0, migasa.InstanceId,
+                    AttackTargetKind.Player).Success, Is.False);
+            }
+            else
+            {
+                Assert.That(engine.DeclareAttack(state, 0, migasa.InstanceId,
+                    AttackTargetKind.Player).Success, Is.True);
+                Assert.That(engine.DeclineBlockAndResolve(state, 1).Success, Is.True);
+            }
+            Assert.That(engine.EndTurn(state, 0).Success, Is.True);
+            Assert.That(new AbilityResolver().HasKeyword(state, migasa,
+                CardKeyword.SpeedAttacker), Is.False,
+                "Supersonic Jet Pack grants Speed Attacker only until end of turn.");
+            Assert.That(new AbilityResolver().HasKeyword(state, chosenFire,
+                CardKeyword.DoubleBreaker), Is.False);
+        }
+
         private static GameState EmptyState() => new GameState
         {
             Players = new[] { new PlayerState { PlayerId = 0 }, new PlayerState { PlayerId = 1 } },
