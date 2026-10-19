@@ -1187,7 +1187,16 @@ namespace CardGame.Core
             return false;
         }
 
-        public void ResolveTapAbility(GameState state, CardInstance creature)
+        public RuleAbilityDefinition SingleCardTapChoiceRule(GameState state, CardInstance creature) =>
+            RulesOf(state, creature).FirstOrDefault(rule =>
+                rule.Timing == AbilityTiming.TapAbility &&
+                rule.Chooser != RuleController.Opponent &&
+                rule.Selector != null &&
+                rule.Selector.Mode == RuleSelectionMode.Choose &&
+                rule.Selector.Maximum == 1);
+
+        public void ResolveTapAbility(GameState state, CardInstance creature,
+            long preferredTargetInstanceId = 0)
         {
             if (state == null || creature == null) return;
             _abilityResolutionDepth++;
@@ -1213,8 +1222,20 @@ namespace CardGame.Core
                     var selectedSource = ChooseCardsSafely(state, ownerId, creature,
                         choice, distinctSources, 1, 1).FirstOrDefault() ??
                         distinctSources[0];
-                    ResolveImmediate(state, selectedSource,
-                        AbilityTiming.TapAbility);
+                    var previousPreferredSource = _preferredSelectionSource;
+                    var previousPreferredInstanceId = _preferredSelectionInstanceId;
+                    _preferredSelectionSource = selectedSource;
+                    _preferredSelectionInstanceId = preferredTargetInstanceId;
+                    try
+                    {
+                        ResolveImmediate(state, selectedSource,
+                            AbilityTiming.TapAbility);
+                    }
+                    finally
+                    {
+                        _preferredSelectionSource = previousPreferredSource;
+                        _preferredSelectionInstanceId = previousPreferredInstanceId;
+                    }
                 }
             }
             finally

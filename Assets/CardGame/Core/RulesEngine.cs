@@ -540,6 +540,10 @@ namespace CardGame.Core
             player.Graveyard.Add(spell);
         }
 
+        public bool HasSummoningSickness(GameState state, CardInstance creature) =>
+            creature.EnteredBattleZoneOnTurn == state.TurnNumber &&
+            !_abilities.HasKeyword(state, creature, CardKeyword.SpeedAttacker);
+
         public RuleResult DeclareAttack(
             GameState state,
             int playerId,
@@ -575,8 +579,7 @@ namespace CardGame.Core
             if (targetKind == AttackTargetKind.Creature &&
                 _abilities.HasKeyword(state, attacker, CardKeyword.CannotAttackCreatures))
                 return RuleResult.Fail("This creature cannot attack creatures.");
-            if (!ignoresRestrictions && attacker.EnteredBattleZoneOnTurn == state.TurnNumber &&
-                !_abilities.HasKeyword(state, attacker, CardKeyword.SpeedAttacker))
+            if (!ignoresRestrictions && HasSummoningSickness(state, attacker))
                 return RuleResult.Fail("The creature has summoning sickness.");
 
             if (targetKind == AttackTargetKind.Creature)
@@ -636,7 +639,23 @@ namespace CardGame.Core
             return RuleResult.Ok();
         }
 
-        public RuleResult UseTapAbility(GameState state, int playerId, long creatureInstanceId)
+        public bool HasTapAbility(GameState state, CardInstance creature) =>
+            _abilities.CanUseTapAbility(state, creature);
+
+        public IReadOnlyList<CardInstance> GetTapAbilityTargetCandidates(
+            GameState state, int playerId, long creatureInstanceId)
+        {
+            if (state == null || playerId < 0 || playerId >= state.Players.Length)
+                return Array.Empty<CardInstance>();
+            var creature = Find(state.Players[playerId].BattleZone, creatureInstanceId);
+            if (creature == null) return Array.Empty<CardInstance>();
+            var rule = _abilities.SingleCardTapChoiceRule(state, creature);
+            return rule == null ? Array.Empty<CardInstance>() :
+                _abilities.LegalCandidatesFor(state, creature, rule).ToArray();
+        }
+
+        public RuleResult UseTapAbility(GameState state, int playerId, long creatureInstanceId,
+            long preferredTargetInstanceId = 0)
         {
             if (state.IsFinished) return RuleResult.Fail("The game is already finished.");
             if (playerId != state.ActivePlayerId) return RuleResult.Fail("It is not this player's turn.");
@@ -645,16 +664,19 @@ namespace CardGame.Core
                 return RuleResult.Fail("Resolve pending shield triggers first.");
             var creature = Find(state.Players[playerId].BattleZone, creatureInstanceId);
             if (creature == null) return RuleResult.Fail("Choose one of your creatures in the battle zone.");
-            if (creature.EnteredBattleZoneOnTurn == state.TurnNumber &&
-                !_abilities.HasKeyword(state, creature, CardKeyword.SpeedAttacker))
+            if (HasSummoningSickness(state, creature))
                 return RuleResult.Fail("The creature has summoning sickness and cannot use a tap ability.");
             if (!_abilities.CanDeclareAnyAttack(state, creature))
                 return RuleResult.Fail("A creature that cannot legally attack cannot use a tap ability.");
             if (!_abilities.CanUseTapAbility(state, creature))
                 return RuleResult.Fail("This creature does not have a tap ability.");
+            if (preferredTargetInstanceId != 0 &&
+                !GetTapAbilityTargetCandidates(state, playerId, creatureInstanceId)
+                    .Any(card => card.InstanceId == preferredTargetInstanceId))
+                return RuleResult.Fail("Choose a legal target for this tap ability.");
             state.Phase = GamePhase.Attack;
             creature.Tapped = true;
-            _abilities.ResolveTapAbility(state, creature);
+            _abilities.ResolveTapAbility(state, creature, preferredTargetInstanceId);
             return RuleResult.Ok();
         }
 
