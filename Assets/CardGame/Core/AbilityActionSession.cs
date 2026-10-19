@@ -236,9 +236,11 @@ namespace CardGame.Core
                 CardInstance source, AbilityTiming timing, IReadOnlyList<string> ids) =>
                 playerId != _session._humanId ? 0 : Option(state, playerId, source,
                     "trigger_order." + timing, "Choose the next ability to resolve.",
-                    ids.Select(id => source.Definition.RuleAbilities.Concat(
-                        source.TimedRuleAbilities.Select(e => e.Ability))
-                        .Where(a => a.Id == id).Select(a => a.RulesText)
+                    ids.Select(id => new AbilityResolver().GetAbilityPreviews(state, source)
+                        .Select(preview => preview.Ability)
+                        .Concat(state.DelayedAbilities.Where(effect => effect.Source == source).Select(effect => effect.Ability))
+                        .Concat(TcgCatalog.Printings.SelectMany(card => card.RuleAbilities))
+                        .Where(a => a != null && a.Id == id).Select(a => a.RulesText)
                         .FirstOrDefault(text => !string.IsNullOrWhiteSpace(text)) ??
                         source.Definition.RulesText).ToArray());
         }
