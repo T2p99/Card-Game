@@ -42,6 +42,7 @@ namespace CardGame.Presentation
             new HashSet<Civilization>(SelectableCivilizations);
         private long _selectedEvolutionBaseId;
         private long _selectedSpellTargetId;
+        private long _selectedSummonChoiceId;
         private Texture2D _cardBack;
 
         private RulesEngine _engine;
@@ -59,6 +60,7 @@ namespace CardGame.Presentation
         private Vector2 _computerManaScroll;
         private Vector2 _manaSelectionScroll;
         private Vector2 _spellTargetScroll;
+        private Vector2 _summonChoiceScroll;
         private Vector2 _battleActionScroll;
         private Vector2 _controlPanelScroll;
         private string _message = "Choose a card, charge mana, and summon a creature.";
@@ -284,10 +286,11 @@ namespace CardGame.Presentation
                 var wasSelected = selectedSets.Contains(setCode);
                 var cardCount = TcgCatalog.ForSet(setCode)
                     .Count(card => card.ImplementationStatus == CardImplementationStatus.Complete);
-                var isSelected = GUI.Toggle(
-                    new Rect(area.x + 14f + column * cellWidth, area.y + 56f + row * rowHeight,
-                        cellWidth - 8f, 38f),
-                    wasSelected, $" {setCode}  ({cardCount})");
+                var isSelected = DrawDeckPoolChoice(
+                    new Rect(area.x + 14f + column * cellWidth,
+                        area.y + 56f + row * rowHeight, cellWidth - 8f, 38f),
+                    wasSelected, $"{setCode}  ({cardCount})",
+                    new Color(0.12f, 0.64f, 0.96f));
                 if (isSelected != wasSelected)
                 {
                     if (isSelected) selectedSets.Add(setCode);
@@ -309,11 +312,10 @@ namespace CardGame.Presentation
             {
                 var civilization = SelectableCivilizations[i];
                 var wasSelected = selectedCivilizations.Contains(civilization);
-                GUI.backgroundColor = CivilizationColor(civilization);
-                var isSelected = GUI.Toggle(
+                var isSelected = DrawDeckPoolChoice(
                     new Rect(area.x + 14f + i * civilizationCellWidth, civilizationY + 24f,
                         civilizationCellWidth - 5f, 36f),
-                    wasSelected, $" {civilization}");
+                    wasSelected, civilization.ToString(), CivilizationColor(civilization));
                 if (isSelected != wasSelected)
                 {
                     if (isSelected) selectedCivilizations.Add(civilization);
@@ -344,6 +346,47 @@ namespace CardGame.Presentation
                     selectedCivilizations.Add(civilization);
             if (GUI.Button(new Rect(area.x + 32f + buttonWidth * 3f, controlsY, buttonWidth, 38f), "Clear Civs"))
                 selectedCivilizations.Clear();
+        }
+
+        private static bool DrawDeckPoolChoice(
+            Rect rect,
+            bool selected,
+            string label,
+            Color accent)
+        {
+            var previousColor = GUI.color;
+            var previousBackground = GUI.backgroundColor;
+            var previousContent = GUI.contentColor;
+            var borderColor = selected
+                ? Color.Lerp(accent, Color.white, 0.34f)
+                : new Color(0.25f, 0.30f, 0.38f);
+            GUI.color = borderColor;
+            GUI.DrawTexture(rect, Texture2D.whiteTexture);
+
+            var buttonRect = new Rect(rect.x + 3f, rect.y + 3f,
+                rect.width - 6f, rect.height - 6f);
+            GUI.color = Color.white;
+            GUI.backgroundColor = selected
+                ? Color.Lerp(accent, new Color(0.04f, 0.06f, 0.09f), 0.42f)
+                : new Color(0.14f, 0.17f, 0.22f);
+            GUI.contentColor = Color.white;
+            var style = new GUIStyle(GUI.skin.button)
+            {
+                alignment = TextAnchor.MiddleCenter,
+                fontSize = selected ? 14 : 13,
+                fontStyle = selected ? FontStyle.Bold : FontStyle.Normal
+            };
+            style.normal.textColor = Color.white;
+            style.hover.textColor = Color.white;
+            style.active.textColor = Color.white;
+            style.focused.textColor = Color.white;
+            var clicked = GUI.Button(buttonRect,
+                selected ? $"✓  {label}" : label, style);
+
+            GUI.color = previousColor;
+            GUI.backgroundColor = previousBackground;
+            GUI.contentColor = previousContent;
+            return clicked ? !selected : selected;
         }
 
         private static int CountPlayableCardNames(
@@ -403,6 +446,7 @@ namespace CardGame.Presentation
                 _selectedManaIds.Clear();
                 _selectedEvolutionBaseId = 0;
                 _selectedSpellTargetId = 0;
+                _selectedSummonChoiceId = 0;
                 _handScroll = Vector2.zero;
                 _humanBattleScroll = Vector2.zero;
                 _computerBattleScroll = Vector2.zero;
@@ -410,6 +454,7 @@ namespace CardGame.Presentation
                 _computerManaScroll = Vector2.zero;
                 _manaSelectionScroll = Vector2.zero;
                 _spellTargetScroll = Vector2.zero;
+                _summonChoiceScroll = Vector2.zero;
                 _battleActionScroll = Vector2.zero;
                 _controlPanelScroll = Vector2.zero;
                 _artRequests.Clear();
@@ -457,6 +502,7 @@ namespace CardGame.Presentation
             _selectedCreature = null;
             _selectedOpponentCreature = null;
             _selectedSpellTargetId = 0;
+            _selectedSummonChoiceId = 0;
             _showDeckSetup = true;
             _setupMessage = "Change either set/civilization pool, then build two newly randomized decks.";
         }
@@ -1119,6 +1165,8 @@ namespace CardGame.Presentation
             _selectedManaIds.Clear();
             _selectedEvolutionBaseId = 0;
             _selectedSpellTargetId = 0;
+            _selectedSummonChoiceId = 0;
+            _summonChoiceScroll = Vector2.zero;
             var pendingShieldTrigger = _state.PendingShieldTriggers.Contains(card);
             if (pendingShieldTrigger && card.Definition.Type == CardType.Spell &&
                 _engine.SpellUsesSingleCardTarget(card.Definition))
@@ -1147,6 +1195,8 @@ namespace CardGame.Presentation
             _selectedManaIds.Clear();
             _selectedEvolutionBaseId = 0;
             _selectedSpellTargetId = 0;
+            _selectedSummonChoiceId = 0;
+            _summonChoiceScroll = Vector2.zero;
             _viewerMessage = card.Tapped ? "This card is currently turned." : string.Empty;
         }
 
@@ -1161,6 +1211,8 @@ namespace CardGame.Presentation
             _selectedManaIds.Clear();
             _selectedEvolutionBaseId = 0;
             _selectedSpellTargetId = 0;
+            _selectedSummonChoiceId = 0;
+            _summonChoiceScroll = Vector2.zero;
             _viewerMessage = string.Empty;
             if (!wasHandViewer) _selectedHand = null;
         }
@@ -1184,6 +1236,8 @@ namespace CardGame.Presentation
             _selectedManaIds.Clear();
             _selectedEvolutionBaseId = 0;
             _selectedSpellTargetId = 0;
+            _selectedSummonChoiceId = 0;
+            _summonChoiceScroll = Vector2.zero;
             _viewerMessage = string.Empty;
         }
 
@@ -1473,7 +1527,9 @@ namespace CardGame.Presentation
             _selectedManaIds.Clear();
             _selectedEvolutionBaseId = 0;
             _selectedSpellTargetId = 0;
+            _selectedSummonChoiceId = 0;
             _spellTargetScroll = Vector2.zero;
+            _summonChoiceScroll = Vector2.zero;
             if (_selectedHand.Definition.Type == CardType.Spell &&
                 _engine.SpellUsesSingleCardTarget(_selectedHand.Definition))
             {
@@ -1485,10 +1541,22 @@ namespace CardGame.Presentation
                 else if (candidates.Count == 1)
                     _selectedSpellTargetId = candidates[0].InstanceId;
             }
+            if (_engine.CreatureRequiresSingleCardSummonChoice(
+                    _selectedHand.Definition))
+            {
+                var candidates = _engine.GetCreatureSummonChoiceCandidates(
+                    _state, HumanId, _selectedHand.InstanceId);
+                if (candidates.Count == 1)
+                    _selectedSummonChoiceId = candidates[0].InstanceId;
+            }
             _selectingManaPayment = true;
-            _viewerMessage = _selectedHand.Definition.Cost == 0
+            var paymentMessage = _selectedHand.Definition.Cost == 0
                 ? "This card costs no mana. Confirm to play it."
                 : $"Select exactly {_selectedHand.Definition.Cost} untapped mana cards to turn.";
+            _viewerMessage = _engine.CreatureRequiresSingleCardSummonChoice(
+                _selectedHand.Definition)
+                ? paymentMessage + " Also choose the card required by its summon ability."
+                : paymentMessage;
         }
 
         private void DrawManaPaymentSelector(Rect area)
@@ -1503,7 +1571,12 @@ namespace CardGame.Presentation
             var spellRequiresTarget = spellUsesTarget &&
                                       _engine.SpellRequiresSingleCardTarget(
                                           _selectedHand.Definition);
+            var requiresSummonChoice =
+                _engine.CreatureRequiresSingleCardSummonChoice(
+                    _selectedHand.Definition);
             IReadOnlyList<CardInstance> spellTargets = Array.Empty<CardInstance>();
+            IReadOnlyList<CardInstance> summonChoiceCandidates =
+                Array.Empty<CardInstance>();
 
             if (spellUsesTarget)
             {
@@ -1554,9 +1627,78 @@ namespace CardGame.Presentation
                 manaTop += 158f;
             }
 
+            if (requiresSummonChoice)
+            {
+                summonChoiceCandidates =
+                    _engine.GetCreatureSummonChoiceCandidates(_state, HumanId,
+                        _selectedHand.InstanceId);
+                if (_selectedSummonChoiceId != 0 &&
+                    !summonChoiceCandidates.Any(card =>
+                        card.InstanceId == _selectedSummonChoiceId))
+                    _selectedSummonChoiceId = 0;
+                if (_selectedSummonChoiceId == 0 &&
+                    summonChoiceCandidates.Count == 1)
+                    _selectedSummonChoiceId =
+                        summonChoiceCandidates[0].InstanceId;
+
+                var choiceStyle = new GUIStyle(GUI.skin.label)
+                {
+                    wordWrap = true,
+                    fontStyle = FontStyle.Bold
+                };
+                choiceStyle.normal.textColor = new Color(1f, 0.78f, 0.18f);
+                var choiceText = summonChoiceCandidates.Count == 0
+                    ? "SUMMON ABILITY — no legal card is currently available."
+                    : "SUMMON ABILITY — choose the card this effect will use:\n" +
+                      _engine.CreatureSingleCardSummonChoiceText(
+                          _selectedHand.Definition);
+                GUI.Label(new Rect(area.x, manaTop, area.width, 50f),
+                    choiceText, choiceStyle);
+
+                var choiceViewport = new Rect(area.x, manaTop + 52f,
+                    area.width, 104f);
+                GUI.Box(choiceViewport, GUIContent.none);
+                const float choiceSlotWidth = 108f;
+                const float choiceCardHeight = 84f;
+                var choiceContent = new Rect(0f, 0f,
+                    Mathf.Max(choiceViewport.width - 18f,
+                        summonChoiceCandidates.Count * choiceSlotWidth),
+                    choiceCardHeight);
+                _summonChoiceScroll = GUI.BeginScrollView(choiceViewport,
+                    _summonChoiceScroll, choiceContent);
+                for (var i = 0; i < summonChoiceCandidates.Count; i++)
+                {
+                    var candidate = summonChoiceCandidates[i];
+                    var choiceCardWidth = choiceCardHeight * 0.67f;
+                    var cardRect = new Rect(
+                        i * choiceSlotWidth +
+                        (choiceSlotWidth - choiceCardWidth) * 0.5f,
+                        0f, choiceCardWidth, choiceCardHeight);
+                    var selectedForAbility =
+                        _selectedSummonChoiceId == candidate.InstanceId;
+                    DrawCardButton(candidate, cardRect, selectedForAbility,
+                        false, () =>
+                        {
+                            _selectedSummonChoiceId = candidate.InstanceId;
+                            _viewerMessage =
+                                $"Selected {candidate.Definition.Name} for the summon ability.";
+                        }, true);
+                    if (selectedForAbility)
+                    {
+                        GUI.color = new Color(1f, 0.78f, 0.12f);
+                        GUI.Box(new Rect(i * choiceSlotWidth + 4f,
+                            cardRect.yMax - 25f, choiceSlotWidth - 8f, 23f),
+                            "GRAVEYARD");
+                        GUI.color = Color.white;
+                    }
+                }
+                GUI.EndScrollView();
+                manaTop += 164f;
+            }
+
             if (isEvolution)
             {
-                GUI.Label(new Rect(area.x, area.y, area.width, 24f),
+                GUI.Label(new Rect(area.x, manaTop, area.width, 24f),
                     $"Choose a {_selectedHand.Definition.EvolutionRace} in your battle zone to evolve:");
                 var bases = player.BattleZone.Where(card => card.Definition.Races.Any(race =>
                     race.Equals(_selectedHand.Definition.EvolutionRace, StringComparison.OrdinalIgnoreCase))).ToList();
@@ -1565,12 +1707,13 @@ namespace CardGame.Presentation
                 for (var i = 0; i < bases.Count; i++)
                 {
                     var baseCard = bases[i];
-                    var baseRect = new Rect(area.x + i * (baseCardWidth + 10f), area.y + 26f, baseCardWidth, baseCardHeight);
+                    var baseRect = new Rect(area.x + i * (baseCardWidth + 10f),
+                        manaTop + 26f, baseCardWidth, baseCardHeight);
                     DrawCardButton(baseCard, baseRect, _selectedEvolutionBaseId == baseCard.InstanceId, false,
                         () => _selectedEvolutionBaseId = baseCard.InstanceId, true);
                 }
                 if (bases.Count == 0)
-                    GUI.Label(new Rect(area.x, area.y + 32f, area.width, 48f),
+                    GUI.Label(new Rect(area.x, manaTop + 32f, area.width, 48f),
                         $"You do not currently control a {_selectedHand.Definition.EvolutionRace}.");
                 manaTop += 122f;
             }
@@ -1608,7 +1751,9 @@ namespace CardGame.Presentation
             var confirmEnabled = _selectedManaIds.Count == cost &&
                                  (!isEvolution || _selectedEvolutionBaseId != 0) &&
                                  (!spellRequiresTarget ||
-                                  _selectedSpellTargetId != 0);
+                                  _selectedSpellTargetId != 0) &&
+                                 (!requiresSummonChoice ||
+                                  _selectedSummonChoiceId != 0);
             GUI.enabled = confirmEnabled;
             if (GUI.Button(new Rect(area.x, area.yMax - 56f, area.width * 0.62f, 48f), $"Confirm — Turn {cost} Mana"))
                 ConfirmManualPlay();
@@ -1619,6 +1764,7 @@ namespace CardGame.Presentation
                 _selectedManaIds.Clear();
                 _selectedEvolutionBaseId = 0;
                 _selectedSpellTargetId = 0;
+                _selectedSummonChoiceId = 0;
                 _viewerMessage = string.Empty;
             }
         }
@@ -1632,7 +1778,9 @@ namespace CardGame.Presentation
                 result = TryCastSpell(HumanId, card, payment,
                     _selectedSpellTargetId);
             else
-                result = _engine.SummonCreature(_state, HumanId, card.InstanceId, payment, _selectedEvolutionBaseId);
+                result = _engine.SummonCreature(_state, HumanId,
+                    card.InstanceId, payment, _selectedEvolutionBaseId,
+                    _selectedSummonChoiceId);
 
             ShowResult(result, result.Success ? $"Played {card.Definition.Name}." : null);
             if (!result.Success)
