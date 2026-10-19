@@ -147,7 +147,7 @@ namespace CardGame.Core.Tests
             state.InspectionPlayerId = 0;
             state.InspectedCards.Add(state.Players[1].Shields[0]);
             var session = new AbilityActionSession(state, 0, (e, s) => e.DeclineBlockAndResolve(s, 1));
-            Assert.That(session.PendingChoice.CardLabels, Is.EqualTo(new[] { "Face-down shield 1", "Face-down shield 2" }));
+            Assert.That(session.PendingChoice.CardLabels, Is.EqualTo(new[] { "Opponent — Face-down shield 1", "Opponent — Face-down shield 2" }));
             Assert.That(session.AnswerCards(new long[] { 12 }), Is.True);
             Assert.That(session.State.Players[1].Hand.Single().InstanceId, Is.EqualTo(12));
             Assert.That(state.Players[1].Shields.Count, Is.EqualTo(2));
