@@ -40,12 +40,18 @@ namespace CardGame.Presentation
             new HashSet<Civilization>(SelectableCivilizations);
         private readonly HashSet<Civilization> _computerSelectedCivilizations =
             new HashSet<Civilization>(SelectableCivilizations);
-        private long _selectedEvolutionBaseId;
-        private long _selectedSpellTargetId;
-        private long _selectedSummonChoiceId;
-        private long _selectedTapTargetId;
         private Texture2D _cardBack;
 
+        private AbilityActionSession _actionSession;
+        private AbilityChoice _shownAbilityChoice;
+        private readonly List<long> _abilitySelectedIds = new List<long>();
+        private Vector2 _abilityChoiceScroll;
+        private Vector2 _liveRulesScroll;
+        private string _abilityNumberText = string.Empty;
+        private bool _showLiveRules = true;
+        private bool _resolvingComputerTriggers;
+        private int _actionDepth;
+        private IReadOnlyList<CardInstance> _inspectionReview;
         private RulesEngine _engine;
         private GameState _state;
         private CardInstance _selectedHand;
@@ -60,8 +66,6 @@ namespace CardGame.Presentation
         private Vector2 _humanManaScroll;
         private Vector2 _computerManaScroll;
         private Vector2 _manaSelectionScroll;
-        private Vector2 _spellTargetScroll;
-        private Vector2 _summonChoiceScroll;
         private Vector2 _battleActionScroll;
         private Vector2 _controlPanelScroll;
         private string _message = "Choose a card, charge mana, and summon a creature.";
@@ -186,6 +190,12 @@ namespace CardGame.Presentation
                 return;
             }
 
+            if (_actionDepth > 0 || _inspectionReview != null)
+            {
+                DrawAbilityChoice();
+                GUI.matrix = previousMatrix;
+                return;
+            }
             DrawHeader();
             var modalWasOpen = _showHandCardViewer || _showVideo;
             if (!modalWasOpen)
@@ -427,6 +437,10 @@ namespace CardGame.Presentation
                 var computerDeck = TcgCatalog.BuildRandomDeckFromSets(
                     computerSets, computerCivilizations, unchecked(_matchSeed ^ (int)0x9e3779b9));
 
+                _actionSession = null;
+                _inspectionReview = null;
+                _resolvingComputerTriggers = false;
+                _actionDepth = 0;
                 _engine = new RulesEngine();
                 _state = _engine.StartGame(humanDeck, computerDeck, _matchSeed, HumanId);
                 _humanDeckLabel = FormatSetSelection(humanSets);
@@ -445,17 +459,12 @@ namespace CardGame.Presentation
                 _showHandCardViewer = false;
                 _selectingManaPayment = false;
                 _selectedManaIds.Clear();
-                _selectedEvolutionBaseId = 0;
-                _selectedSpellTargetId = 0;
-                _selectedSummonChoiceId = 0;
                 _handScroll = Vector2.zero;
                 _humanBattleScroll = Vector2.zero;
                 _computerBattleScroll = Vector2.zero;
                 _humanManaScroll = Vector2.zero;
                 _computerManaScroll = Vector2.zero;
                 _manaSelectionScroll = Vector2.zero;
-                _spellTargetScroll = Vector2.zero;
-                _summonChoiceScroll = Vector2.zero;
                 _battleActionScroll = Vector2.zero;
                 _controlPanelScroll = Vector2.zero;
                 _artRequests.Clear();
@@ -502,8 +511,6 @@ namespace CardGame.Presentation
             _selectedHand = null;
             _selectedCreature = null;
             _selectedOpponentCreature = null;
-            _selectedSpellTargetId = 0;
-            _selectedSummonChoiceId = 0;
             _showDeckSetup = true;
             _setupMessage = "Change either set/civilization pool, then build two newly randomized decks.";
         }
@@ -950,10 +957,8 @@ namespace CardGame.Presentation
             var humanBlockers = _awaitingHumanBlock
                 ? EligibleBlockers(_state.Players[HumanId]).ToArray()
                 : Array.Empty<CardInstance>();
-            var pendingTriggers = _state.PendingShieldTriggers.Count > 0 &&
-                                  _state.ActivePlayerId == ComputerId
-                ? _state.PendingShieldTriggers.ToArray()
-                : Array.Empty<CardInstance>();
+            var pendingTriggers = _state.PendingShieldTriggers
+                .Where(card => _state.Players[HumanId].Hand.Contains(card)).ToArray();
 
             var estimatedHeight = 38f +
                                   PanelTextHeight($"Your pool: {_humanDeckLabel} • {_humanCivilizationLabel}",
@@ -1116,7 +1121,7 @@ namespace CardGame.Presentation
                                 $"PLAY {trigger.Definition.Name} — 0 MANA", 36f, 6f))
                             CastHumanShieldTrigger(trigger);
                     if (DrawPanelButton(ref y, contentWidth, "Skip Remaining Triggers", 36f, 6f))
-                        ShowResult(_engine.ResolvePendingShieldTriggers(_state, HumanId));
+                        QueueAction((engine, state) => engine.ResolvePendingShieldTriggers(state, HumanId), result => ShowResult(result));
                 }
             }
 
@@ -1165,22 +1170,7 @@ namespace CardGame.Presentation
             _viewerAllowsHandActions = true;
             _selectingManaPayment = false;
             _selectedManaIds.Clear();
-            _selectedEvolutionBaseId = 0;
-            _selectedSpellTargetId = 0;
-            _selectedSummonChoiceId = 0;
-            _summonChoiceScroll = Vector2.zero;
             var pendingShieldTrigger = _state.PendingShieldTriggers.Contains(card);
-            if (pendingShieldTrigger && card.Definition.Type == CardType.Spell &&
-                _engine.SpellUsesSingleCardTarget(card.Definition))
-            {
-                var candidates = _engine.GetSpellTargetCandidates(_state, HumanId,
-                    card.InstanceId);
-                if (_selectedOpponentCreature != null &&
-                    candidates.Contains(_selectedOpponentCreature))
-                    _selectedSpellTargetId = _selectedOpponentCreature.InstanceId;
-                else if (candidates.Count == 1)
-                    _selectedSpellTargetId = candidates[0].InstanceId;
-            }
             _viewerMessage = pendingShieldTrigger
                 ? "Shield trigger ready — play this card immediately for 0 mana."
                 : string.Empty;
@@ -1188,7 +1178,6 @@ namespace CardGame.Presentation
 
         private void OpenFaceUpCardViewer(CardInstance card, IReadOnlyList<CardInstance> cards, string zoneName)
         {
-            _selectedTapTargetId = 0;
             _selectedHand = card;
             _viewerCards = cards;
             _viewerZoneName = zoneName;
@@ -1196,16 +1185,11 @@ namespace CardGame.Presentation
             _showHandCardViewer = true;
             _selectingManaPayment = false;
             _selectedManaIds.Clear();
-            _selectedEvolutionBaseId = 0;
-            _selectedSpellTargetId = 0;
-            _selectedSummonChoiceId = 0;
-            _summonChoiceScroll = Vector2.zero;
             _viewerMessage = card.Tapped ? "This card is currently turned." : string.Empty;
         }
 
         private void CloseHandCardViewer()
         {
-            _selectedTapTargetId = 0;
             var wasHandViewer = _viewerAllowsHandActions;
             _showHandCardViewer = false;
             _viewerCards = null;
@@ -1213,17 +1197,12 @@ namespace CardGame.Presentation
             _viewerAllowsHandActions = false;
             _selectingManaPayment = false;
             _selectedManaIds.Clear();
-            _selectedEvolutionBaseId = 0;
-            _selectedSpellTargetId = 0;
-            _selectedSummonChoiceId = 0;
-            _summonChoiceScroll = Vector2.zero;
             _viewerMessage = string.Empty;
             if (!wasHandViewer) _selectedHand = null;
         }
 
         private void NavigateViewer(int direction)
         {
-            _selectedTapTargetId = 0;
             var cards = _viewerCards;
             if (cards == null || cards.Count == 0)
             {
@@ -1239,10 +1218,6 @@ namespace CardGame.Presentation
             _selectedHand = cards[nextIndex];
             _selectingManaPayment = false;
             _selectedManaIds.Clear();
-            _selectedEvolutionBaseId = 0;
-            _selectedSpellTargetId = 0;
-            _selectedSummonChoiceId = 0;
-            _summonChoiceScroll = Vector2.zero;
             _viewerMessage = string.Empty;
         }
 
@@ -1299,10 +1274,18 @@ namespace CardGame.Presentation
                 $"Printed cost: {_selectedHand.Definition.Cost}  •  Mana: {ManaCostText(_selectedHand)}     Type: {_selectedHand.Definition.Type}\n" +
                 $"Civilization: {string.Join(", ", _selectedHand.Definition.Civilizations)}" +
                 (_selectedHand.Definition.IsCreature ? $"     Power: {_engine.CurrentPower(_state, _selectedHand)} (attacking: {_engine.CurrentPower(_state, _selectedHand, true)})" : string.Empty), bodyStyle);
-            GUI.Label(new Rect(infoRect.x, infoRect.y + 142f, infoRect.width, 118f),
+            if (GUI.Button(new Rect(infoRect.x, infoRect.y + 139f, 170f, 27f),
+                    _showLiveRules ? "Show printed text" : "Show live abilities"))
+                _showLiveRules = !_showLiveRules;
+            var ruleText = _showLiveRules ? LiveAbilityText(_selectedHand) :
                 string.IsNullOrWhiteSpace(_selectedHand.Definition.RulesText)
-                    ? "This card has no printed ability."
-                    : _selectedHand.Definition.RulesText, bodyStyle);
+                    ? "This card has no printed ability." : _selectedHand.Definition.RulesText;
+            var rulesViewport = new Rect(infoRect.x, infoRect.y + 170f, infoRect.width, 84f);
+            var rulesContent = new Rect(0f, 0f, rulesViewport.width - 22f,
+                Mathf.Max(84f, bodyStyle.CalcHeight(new GUIContent(ruleText), rulesViewport.width - 22f)));
+            _liveRulesScroll = GUI.BeginScrollView(rulesViewport, _liveRulesScroll, rulesContent);
+            GUI.Label(rulesContent, ruleText, bodyStyle);
+            GUI.EndScrollView();
 
             if (!string.IsNullOrEmpty(_viewerMessage))
             {
@@ -1363,103 +1346,24 @@ namespace CardGame.Presentation
                 "Play it now for 0 mana, or decline and keep the broken shield in your hand.",
                 bodyStyle);
 
-            var usesTarget = trigger.Definition.Type == CardType.Spell &&
-                             _engine.SpellUsesSingleCardTarget(
-                                 trigger.Definition);
-            var requiresTarget = usesTarget &&
-                                 _engine.SpellRequiresSingleCardTarget(
-                                     trigger.Definition);
-            IReadOnlyList<CardInstance> targets = Array.Empty<CardInstance>();
-            var actionTop = area.y + 88f;
-            if (usesTarget)
-            {
-                targets = _engine.GetSpellTargetCandidates(_state, HumanId,
-                    trigger.InstanceId);
-                if (_selectedSpellTargetId != 0 && !targets.Any(card =>
-                        card.InstanceId == _selectedSpellTargetId))
-                    _selectedSpellTargetId = 0;
-                if (_selectedSpellTargetId == 0 && targets.Count == 1)
-                    _selectedSpellTargetId = targets[0].InstanceId;
-
-                var targetMessage = targets.Count == 0
-                    ? "No legal target is currently available."
-                    : _selectedSpellTargetId == 0
-                        ? "Choose the card affected by this shield trigger:"
-                        : $"Target: {targets.First(card => card.InstanceId == _selectedSpellTargetId).Definition.Name}";
-                GUI.Label(new Rect(area.x + 10f, actionTop,
-                    area.width - 20f, 28f), targetMessage, bodyStyle);
-
-                var viewport = new Rect(area.x + 8f, actionTop + 30f,
-                    area.width - 16f, 100f);
-                GUI.Box(viewport, GUIContent.none);
-                const float slotWidth = 108f;
-                const float slotHeight = 80f;
-                var content = new Rect(0f, 0f,
-                    Mathf.Max(viewport.width - 18f,
-                        targets.Count * slotWidth), slotHeight);
-                _spellTargetScroll = GUI.BeginScrollView(viewport,
-                    _spellTargetScroll, content);
-                for (var i = 0; i < targets.Count; i++)
-                {
-                    var target = targets[i];
-                    var slot = new Rect(i * slotWidth, 0f,
-                        slotWidth - 8f, slotHeight);
-                    var uprightWidth = slotHeight * 0.67f;
-                    var targetRect = target.Tapped
-                        ? new Rect(slot.x + 4f,
-                            slot.center.y - uprightWidth * 0.5f,
-                            slotHeight, uprightWidth)
-                        : new Rect(slot.center.x - uprightWidth * 0.5f,
-                            slot.y, uprightWidth, slotHeight);
-                    DrawCardButton(target, targetRect,
-                        _selectedSpellTargetId == target.InstanceId, false,
-                        () =>
-                        {
-                            _selectedSpellTargetId = target.InstanceId;
-                            if (_state.Players[ComputerId].BattleZone.Contains(target))
-                                _selectedOpponentCreature = target;
-                            _viewerMessage = $"Selected {target.Definition.Name} as the shield-trigger target.";
-                        }, true);
-                }
-                GUI.EndScrollView();
-            }
+            GUI.Label(new Rect(area.x + 10f, area.y + 90f, area.width - 20f, 70f),
+                "You will choose targets and optional effects when each ability resolves.", bodyStyle);
 
             var playRect = new Rect(area.x + 8f, area.yMax - 58f,
                 area.width * 0.62f, 50f);
             var declineRect = new Rect(area.x + area.width * 0.66f,
                 area.yMax - 58f, area.width * 0.34f - 8f, 50f);
-            GUI.enabled = !requiresTarget || _selectedSpellTargetId != 0;
+            GUI.enabled = true;
             if (GUI.Button(playRect, "PLAY FOR 0 MANA"))
             {
-                var result = CastHumanShieldTrigger(trigger,
-                    _selectedSpellTargetId);
-                if (result.Success)
-                {
-                    _selectedHand = null;
-                    CloseHandCardViewer();
-                }
-                else
-                {
-                    _viewerMessage = result.Error;
-                }
+                CastHumanShieldTrigger(trigger);
             }
             GUI.enabled = true;
             if (GUI.Button(declineRect, "DECLINE"))
             {
-                var result = _engine.DeclineShieldTrigger(_state, HumanId,
-                    trigger.InstanceId);
-                ShowResult(result, result.Success
-                    ? $"Kept {trigger.Definition.Name} in your hand."
-                    : null);
-                if (result.Success)
-                {
-                    _selectedHand = null;
-                    CloseHandCardViewer();
-                }
-                else
-                {
-                    _viewerMessage = result.Error;
-                }
+                QueueAction((engine, state) => engine.DeclineShieldTrigger(state, HumanId,
+                    trigger.InstanceId), result => ShowResult(result,
+                        result.Success ? $"Kept {trigger.Definition.Name} in your hand." : null));
             }
         }
 
@@ -1517,54 +1421,14 @@ namespace CardGame.Presentation
             var noteTop = area.y + 108f;
             if (_engine.HasTapAbility(_state, attacker))
             {
-                var tapTargets = _engine.GetTapAbilityTargetCandidates(
-                    _state, HumanId, attacker.InstanceId);
-                if (!tapTargets.Any(card => card.InstanceId == _selectedTapTargetId))
-                    _selectedTapTargetId = tapTargets.Count == 1
-                        ? tapTargets[0].InstanceId : 0;
-                if (tapTargets.Count > 0)
-                {
-                    GUI.Label(new Rect(area.x + 10f, noteTop, area.width - 20f, 28f),
-                        "Choose the card affected by the tap ability:", bodyStyle);
-                    var targetViewport = new Rect(area.x + 8f, noteTop + 30f,
-                        area.width - 16f, 66f);
-                    var targetContent = new Rect(0f, 0f,
-                        Mathf.Max(targetViewport.width - 18f,
-                            tapTargets.Count * (buttonWidth + 10f)), buttonHeight);
-                    _summonChoiceScroll = GUI.BeginScrollView(targetViewport,
-                        _summonChoiceScroll, targetContent);
-                    GUI.enabled = canUseControls;
-                    for (var i = 0; i < tapTargets.Count; i++)
-                    {
-                        var target = tapTargets[i];
-                        GUI.backgroundColor = _selectedTapTargetId == target.InstanceId
-                            ? new Color(1f, 0.75f, 0.15f)
-                            : new Color(0.20f, 0.28f, 0.36f);
-                        var label = (_selectedTapTargetId == target.InstanceId ? "✓ " : "") +
-                                    target.Definition.Name;
-                        if (GUI.Button(new Rect(i * (buttonWidth + 10f), 0f,
-                                buttonWidth, buttonHeight), label))
-                            _selectedTapTargetId = target.InstanceId;
-                    }
-                    GUI.EndScrollView();
-                    noteTop += 102f;
-                }
-                GUI.enabled = canUseControls && canUseTapAbility &&
-                              (tapTargets.Count == 0 || _selectedTapTargetId != 0);
+                GUI.enabled = canUseControls && canUseTapAbility;
                 GUI.backgroundColor = new Color(0.30f, 0.58f, 0.36f);
                 if (GUI.Button(new Rect(area.x + 10f, noteTop,
                         area.width - 20f, 46f), "Use Tap Ability — Instead of Attacking"))
                 {
-                    var result = _engine.UseTapAbility(_state, HumanId,
-                        attacker.InstanceId, _selectedTapTargetId);
-                    ShowResult(result, result.Success
-                        ? $"Used {attacker.Definition.Name}'s tap ability." : null);
-                    if (result.Success)
-                    {
-                        CloseHandCardViewer();
-                        return;
-                    }
-                    _viewerMessage = result.Error;
+                    QueueAction((engine, state) => engine.UseTapAbility(state, HumanId,
+                        attacker.InstanceId), result => ShowResult(result,
+                            result.Success ? $"Used {attacker.Definition.Name}'s tap ability." : null));
                 }
                 GUI.enabled = true;
                 noteTop += 54f;
@@ -1582,36 +1446,8 @@ namespace CardGame.Presentation
         private void BeginManaPayment()
         {
             _selectedManaIds.Clear();
-            _selectedEvolutionBaseId = 0;
-            _selectedSpellTargetId = 0;
-            _selectedSummonChoiceId = 0;
-            _spellTargetScroll = Vector2.zero;
-            _summonChoiceScroll = Vector2.zero;
-            if (_selectedHand.Definition.Type == CardType.Spell &&
-                _engine.SpellUsesSingleCardTarget(_selectedHand.Definition))
-            {
-                var candidates = _engine.GetSpellTargetCandidates(_state, HumanId,
-                    _selectedHand.InstanceId);
-                if (_selectedOpponentCreature != null &&
-                    candidates.Contains(_selectedOpponentCreature))
-                    _selectedSpellTargetId = _selectedOpponentCreature.InstanceId;
-                else if (candidates.Count == 1)
-                    _selectedSpellTargetId = candidates[0].InstanceId;
-            }
-            if (_engine.CreatureRequiresSingleCardSummonChoice(
-                    _selectedHand.Definition))
-            {
-                var candidates = _engine.GetCreatureSummonChoiceCandidates(
-                    _state, HumanId, _selectedHand.InstanceId);
-                if (candidates.Count == 1)
-                    _selectedSummonChoiceId = candidates[0].InstanceId;
-            }
             _selectingManaPayment = true;
-            var paymentMessage = $"Select {ManaCostText(_selectedHand)} untapped mana cards to turn.";
-            _viewerMessage = _engine.CreatureRequiresSingleCardSummonChoice(
-                _selectedHand.Definition)
-                ? paymentMessage + " Also choose the card required by its summon ability."
-                : paymentMessage;
+            _viewerMessage = $"Select {ManaCostText(_selectedHand)} untapped mana cards. Ability choices follow confirmation.";
         }
 
         private void DrawManaPaymentSelector(Rect area)
@@ -1621,157 +1457,11 @@ namespace CardGame.Presentation
             var maximumCost = _engine.MaximumManaCost(_state, _selectedHand);
             var isEvolution = _selectedHand.Definition.Type == CardType.EvolutionCreature;
             var manaTop = area.y;
-            var spellUsesTarget = _selectedHand.Definition.Type == CardType.Spell &&
-                                  _engine.SpellUsesSingleCardTarget(
-                                      _selectedHand.Definition);
-            var spellRequiresTarget = spellUsesTarget &&
-                                      _engine.SpellRequiresSingleCardTarget(
-                                          _selectedHand.Definition);
-            var requiresSummonChoice =
-                _engine.CreatureRequiresSingleCardSummonChoice(
-                    _selectedHand.Definition);
-            IReadOnlyList<CardInstance> spellTargets = Array.Empty<CardInstance>();
-            IReadOnlyList<CardInstance> summonChoiceCandidates =
-                Array.Empty<CardInstance>();
-
-            if (spellUsesTarget)
-            {
-                spellTargets = _engine.GetSpellTargetCandidates(_state, HumanId,
-                    _selectedHand.InstanceId);
-                if (_selectedSpellTargetId != 0 && !spellTargets.Any(card =>
-                        card.InstanceId == _selectedSpellTargetId))
-                    _selectedSpellTargetId = 0;
-
-                var targetText = spellTargets.Count == 0
-                    ? "No legal target is currently available."
-                    : _selectedSpellTargetId == 0
-                        ? "Choose the card this spell will affect. Turned creatures are valid unless the printed rule says otherwise."
-                        : $"Target: {spellTargets.First(card => card.InstanceId == _selectedSpellTargetId).Definition.Name}";
-                GUI.Label(new Rect(area.x, manaTop, area.width, 42f), targetText);
-
-                var targetViewport = new Rect(area.x, manaTop + 44f, area.width, 104f);
-                GUI.Box(targetViewport, GUIContent.none);
-                const float targetSlotWidth = 108f;
-                const float targetSlotHeight = 84f;
-                var targetContent = new Rect(0f, 0f,
-                    Mathf.Max(targetViewport.width - 18f,
-                        spellTargets.Count * targetSlotWidth), targetSlotHeight);
-                _spellTargetScroll = GUI.BeginScrollView(targetViewport,
-                    _spellTargetScroll, targetContent);
-                for (var i = 0; i < spellTargets.Count; i++)
-                {
-                    var target = spellTargets[i];
-                    var slot = new Rect(i * targetSlotWidth, 0f,
-                        targetSlotWidth - 8f, targetSlotHeight);
-                    var uprightWidth = targetSlotHeight * 0.67f;
-                    var targetRect = target.Tapped
-                        ? new Rect(slot.x + 4f,
-                            slot.center.y - uprightWidth * 0.5f,
-                            targetSlotHeight, uprightWidth)
-                        : new Rect(slot.center.x - uprightWidth * 0.5f,
-                            slot.y, uprightWidth, targetSlotHeight);
-                    DrawCardButton(target, targetRect,
-                        _selectedSpellTargetId == target.InstanceId, false, () =>
-                        {
-                            _selectedSpellTargetId = target.InstanceId;
-                            if (_state.Players[ComputerId].BattleZone.Contains(target))
-                                _selectedOpponentCreature = target;
-                            _viewerMessage = $"Selected {target.Definition.Name} as the spell target.";
-                        }, true);
-                }
-                GUI.EndScrollView();
-                manaTop += 158f;
-            }
-
-            if (requiresSummonChoice)
-            {
-                summonChoiceCandidates =
-                    _engine.GetCreatureSummonChoiceCandidates(_state, HumanId,
-                        _selectedHand.InstanceId);
-                if (_selectedSummonChoiceId != 0 &&
-                    !summonChoiceCandidates.Any(card =>
-                        card.InstanceId == _selectedSummonChoiceId))
-                    _selectedSummonChoiceId = 0;
-                if (_selectedSummonChoiceId == 0 &&
-                    summonChoiceCandidates.Count == 1)
-                    _selectedSummonChoiceId =
-                        summonChoiceCandidates[0].InstanceId;
-
-                var choiceStyle = new GUIStyle(GUI.skin.label)
-                {
-                    wordWrap = true,
-                    fontStyle = FontStyle.Bold
-                };
-                choiceStyle.normal.textColor = new Color(1f, 0.78f, 0.18f);
-                var choiceText = summonChoiceCandidates.Count == 0
-                    ? "SUMMON ABILITY — no legal card is currently available."
-                    : "SUMMON ABILITY — choose the card this effect will use:\n" +
-                      _engine.CreatureSingleCardSummonChoiceText(
-                          _selectedHand.Definition);
-                GUI.Label(new Rect(area.x, manaTop, area.width, 50f),
-                    choiceText, choiceStyle);
-
-                var choiceViewport = new Rect(area.x, manaTop + 52f,
-                    area.width, 104f);
-                GUI.Box(choiceViewport, GUIContent.none);
-                const float choiceSlotWidth = 108f;
-                const float choiceCardHeight = 84f;
-                var choiceContent = new Rect(0f, 0f,
-                    Mathf.Max(choiceViewport.width - 18f,
-                        summonChoiceCandidates.Count * choiceSlotWidth),
-                    choiceCardHeight);
-                _summonChoiceScroll = GUI.BeginScrollView(choiceViewport,
-                    _summonChoiceScroll, choiceContent);
-                for (var i = 0; i < summonChoiceCandidates.Count; i++)
-                {
-                    var candidate = summonChoiceCandidates[i];
-                    var choiceCardWidth = choiceCardHeight * 0.67f;
-                    var cardRect = new Rect(
-                        i * choiceSlotWidth +
-                        (choiceSlotWidth - choiceCardWidth) * 0.5f,
-                        0f, choiceCardWidth, choiceCardHeight);
-                    var selectedForAbility =
-                        _selectedSummonChoiceId == candidate.InstanceId;
-                    DrawCardButton(candidate, cardRect, selectedForAbility,
-                        false, () =>
-                        {
-                            _selectedSummonChoiceId = candidate.InstanceId;
-                            _viewerMessage =
-                                $"Selected {candidate.Definition.Name} for the summon ability.";
-                        }, true);
-                    if (selectedForAbility)
-                    {
-                        GUI.color = new Color(1f, 0.78f, 0.12f);
-                        GUI.Box(new Rect(i * choiceSlotWidth + 4f,
-                            cardRect.yMax - 25f, choiceSlotWidth - 8f, 23f),
-                            "GRAVEYARD");
-                        GUI.color = Color.white;
-                    }
-                }
-                GUI.EndScrollView();
-                manaTop += 164f;
-            }
-
             if (isEvolution)
             {
-                GUI.Label(new Rect(area.x, manaTop, area.width, 24f),
-                    $"Choose a {_selectedHand.Definition.EvolutionRace} in your battle zone to evolve:");
-                var bases = player.BattleZone.Where(card => card.Definition.Races.Any(race =>
-                    race.Equals(_selectedHand.Definition.EvolutionRace, StringComparison.OrdinalIgnoreCase))).ToList();
-                var baseCardHeight = 90f;
-                var baseCardWidth = baseCardHeight * 0.66f;
-                for (var i = 0; i < bases.Count; i++)
-                {
-                    var baseCard = bases[i];
-                    var baseRect = new Rect(area.x + i * (baseCardWidth + 10f),
-                        manaTop + 26f, baseCardWidth, baseCardHeight);
-                    DrawCardButton(baseCard, baseRect, _selectedEvolutionBaseId == baseCard.InstanceId, false,
-                        () => _selectedEvolutionBaseId = baseCard.InstanceId, true);
-                }
-                if (bases.Count == 0)
-                    GUI.Label(new Rect(area.x, manaTop + 32f, area.width, 48f),
-                        $"You do not currently control a {_selectedHand.Definition.EvolutionRace}.");
-                manaTop += 122f;
+                GUI.Label(new Rect(area.x, manaTop, area.width, 42f),
+                    "Choose evolution bases after confirming mana. Only legal combinations will be offered.");
+                manaTop += 46f;
             }
 
             GUI.Label(new Rect(area.x, manaTop, area.width, 28f),
@@ -1805,12 +1495,7 @@ namespace CardGame.Presentation
             GUI.EndScrollView();
 
             var confirmEnabled = _selectedManaIds.Count >= cost &&
-                                 _selectedManaIds.Count <= maximumCost &&
-                                 (!isEvolution || _selectedEvolutionBaseId != 0) &&
-                                 (!spellRequiresTarget ||
-                                  _selectedSpellTargetId != 0) &&
-                                 (!requiresSummonChoice ||
-                                  _selectedSummonChoiceId != 0);
+                                 _selectedManaIds.Count <= maximumCost;
             GUI.enabled = confirmEnabled;
             if (GUI.Button(new Rect(area.x, area.yMax - 56f, area.width * 0.62f, 48f), $"Confirm — Turn {_selectedManaIds.Count} Mana"))
                 ConfirmManualPlay();
@@ -1819,9 +1504,6 @@ namespace CardGame.Presentation
             {
                 _selectingManaPayment = false;
                 _selectedManaIds.Clear();
-                _selectedEvolutionBaseId = 0;
-                _selectedSpellTargetId = 0;
-                _selectedSummonChoiceId = 0;
                 _viewerMessage = string.Empty;
             }
         }
@@ -1830,233 +1512,314 @@ namespace CardGame.Presentation
         {
             var card = _selectedHand;
             var payment = _selectedManaIds.ToArray();
-            RuleResult result;
-            if (card.Definition.Type == CardType.Spell)
-                result = TryCastSpell(HumanId, card, payment,
-                    _selectedSpellTargetId);
-            else
-                result = _engine.SummonCreature(_state, HumanId,
-                    card.InstanceId, payment, _selectedEvolutionBaseId,
-                    _selectedSummonChoiceId);
-
-            ShowResult(result, result.Success ? $"Played {card.Definition.Name}." : null);
-            if (!result.Success)
-            {
-                _viewerMessage = result.Error;
-                return;
-            }
-
-            _selectedHand = null;
-            CloseHandCardViewer();
+            QueueAction((engine, state) => card.Definition.Type == CardType.Spell
+                ? engine.CastSpell(state, HumanId, card.InstanceId, payment)
+                : engine.SummonCreatureWithChoices(state, HumanId, card.InstanceId, payment),
+                result => ShowResult(result, result.Success ? $"Played {card.Definition.Name}." : null));
         }
 
         private void ChargeSelected()
         {
             var card = _selectedHand;
-            var result = _engine.ChargeMana(_state, HumanId, card.InstanceId);
-            ShowResult(result, result.Success ? $"Charged {card.Definition.Name} as mana." : null);
-            if (!result.Success)
-            {
-                _viewerMessage = result.Error;
-                return;
-            }
-
-            _selectedHand = null;
-            CloseHandCardViewer();
-        }
-
-        private RuleResult TryCastSpell(int playerId, CardInstance spell, IReadOnlyCollection<long> payment, long preferredTarget)
-        {
-            var candidates = new List<long>();
-            if (preferredTarget != 0) candidates.Add(preferredTarget);
-            candidates.AddRange(_state.Players[1 - playerId].BattleZone.Select(card => card.InstanceId));
-            candidates.AddRange(_state.Players[playerId].BattleZone.Select(card => card.InstanceId));
-            candidates.AddRange(_state.Players[playerId].Graveyard.Select(card => card.InstanceId));
-            candidates.Add(0);
-
-            RuleResult last = null;
-            foreach (var target in candidates.Distinct())
-            {
-                last = _engine.CastSpell(_state, playerId, spell.InstanceId, payment, target);
-                if (last.Success) return last;
-            }
-            return last ?? RuleResult.Fail("No legal spell target is available.");
+            QueueAction((engine, state) => engine.ChargeMana(state, HumanId, card.InstanceId),
+                result => ShowResult(result, result.Success ? $"Charged {card.Definition.Name} as mana." : null));
         }
 
         private bool StartHumanAttack(AttackTargetKind kind, long targetId)
         {
             var attacker = _selectedCreature;
-            if (attacker == null)
-            {
-                ShowResult(RuleResult.Fail("Choose one of your creatures to attack."));
-                return false;
-            }
-            var result = _engine.DeclareAttack(_state, HumanId, attacker.InstanceId, kind, targetId);
-            if (!result.Success)
-            {
-                ShowResult(result);
-                _viewerMessage = result.Error;
-                return false;
-            }
-
-            if (_state.PendingAttack == null)
-            {
-                ShowResult(result, $"{attacker.Definition.Name}'s attack ended during its attack abilities.");
-                ResolveComputerShieldTriggers();
-                _selectedCreature = null;
-                _selectedOpponentCreature = null;
-                return true;
-            }
-
-            _busy = true;
-            StartCoroutine(ResolveHumanAttack(attacker));
+            if (attacker == null) return false;
+            QueueAction((engine, state) => engine.DeclareAttack(state, HumanId, attacker.InstanceId, kind, targetId),
+                result =>
+                {
+                    ShowResult(result);
+                    if (!result.Success) return;
+                    _busy = true;
+                    StartCoroutine(ResolveHumanAttack(attacker));
+                });
             return true;
         }
 
         private IEnumerator ResolveHumanAttack(CardInstance attacker)
         {
-            yield return PlayAttackVideo(attacker);
-            var blockers = EligibleBlockers(_state.Players[ComputerId]).ToList();
-            var result = blockers.Count > 0
-                ? _engine.Block(_state, ComputerId, blockers.OrderBy(card => _engine.CurrentPower(_state, card)).First().InstanceId)
-                : _engine.DeclineBlockAndResolve(_state, ComputerId);
-            ShowResult(result, result.Success ? $"{attacker.Definition.Name} attacked." : null);
-            ResolveComputerShieldTriggers();
-            _selectedCreature = null;
-            _selectedOpponentCreature = null;
+            if (_state.PendingAttack != null)
+            {
+                yield return PlayAttackVideo(attacker);
+                var blockers = EligibleBlockers(_state.Players[ComputerId]).ToList();
+                var blockerId = blockers.OrderBy(card => _engine.CurrentPower(_state, card))
+                    .Select(card => card.InstanceId).FirstOrDefault();
+                yield return RunAction((engine, state) => blockerId != 0
+                    ? engine.Block(state, ComputerId, blockerId)
+                    : engine.DeclineBlockAndResolve(state, ComputerId),
+                    result => ShowResult(result, result.Success ? $"{attacker.Definition.Name} attacked." : null));
+            }
+            yield return ResolveComputerShieldTriggers();
             _busy = false;
         }
 
         private void EndHumanTurn()
         {
-            CloseHandCardViewer();
-            var result = _engine.EndTurn(_state, HumanId);
-            ShowResult(result, result.Success ? "Computer is thinking…" : null);
-            if (!result.Success) return;
-            _selectedHand = null;
-            _selectedCreature = null;
-            _selectedOpponentCreature = null;
-            StartCoroutine(RunComputerTurn());
+            QueueAction((engine, state) => engine.EndTurn(state, HumanId), result =>
+            {
+                ShowResult(result, result.Success ? "Computer is thinking…" : null);
+                if (result.Success && !_state.IsFinished) StartCoroutine(RunComputerTurn());
+            });
         }
 
         private IEnumerator RunComputerTurn()
         {
             _busy = true;
             yield return new WaitForSeconds(0.45f);
-            var computer = _state.Players[ComputerId];
+            var manaCard = _state.Players[ComputerId].Hand
+                .OrderByDescending(card => card.Definition.Cost).FirstOrDefault();
+            if (manaCard != null)
+                yield return RunAction((engine, state) => engine.ChargeMana(state, ComputerId, manaCard.InstanceId));
 
-            if (computer.Hand.Any())
-            {
-                var manaCard = computer.Hand
-                    .OrderByDescending(card => card.Definition.ImplementationStatus == CardImplementationStatus.DataOnly)
-                    .ThenByDescending(card => card.Definition.Cost)
-                    .First();
-                _engine.ChargeMana(_state, ComputerId, manaCard.InstanceId);
-            }
-
-            while (TryComputerPlayCreature()) yield return new WaitForSeconds(0.25f);
-
-            foreach (var attacker in computer.BattleZone.ToArray())
+            // A committed choice replaces the match snapshot. Always query the
+            // current state and capture IDs, never retain mutable zone lists.
+            foreach (var cardId in _state.Players[ComputerId].Hand
+                .Where(card => card.Definition.IsCreature)
+                .OrderByDescending(card => card.Definition.Cost).Select(card => card.InstanceId).ToArray())
             {
                 if (_state.IsFinished) break;
-                var attack = _engine.DeclareAttack(_state, ComputerId, attacker.InstanceId, AttackTargetKind.Player);
-                if (!attack.Success) continue;
+                var card = _state.Players[ComputerId].Hand.FirstOrDefault(c => c.InstanceId == cardId);
+                if (card == null) continue;
+                var payment = SelectPayment(_state.Players[ComputerId], card);
+                if (payment.Count != _engine.MinimumManaCost(_state, card)) continue;
+                yield return RunAction((engine, state) => engine.SummonCreatureWithChoices(state, ComputerId, cardId, payment));
+                while (_state.PendingShieldTriggers.Count > 0) yield return null;
+            }
 
-                if (_state.PendingAttack == null)
+            foreach (var attackerId in _state.Players[ComputerId].BattleZone.Select(c => c.InstanceId).ToArray())
+            {
+                if (_state.IsFinished) break;
+                var attacker = _state.Players[ComputerId].BattleZone.FirstOrDefault(c => c.InstanceId == attackerId);
+                if (attacker == null) continue;
+                var kind = AttackTargetKind.Player;
+                long targetId = 0;
+                if (!_engine.ValidateAttack(_state, ComputerId, attackerId, kind).Success)
                 {
-                    _message = $"{attacker.Definition.Name}'s attack ended during its attack abilities.";
-                    while (_state.PendingShieldTriggers.Count > 0) yield return null;
-                    continue;
+                    var target = _engine.GetAttackTargetCandidates(_state, ComputerId, attackerId).FirstOrDefault();
+                    if (target == null) continue;
+                    kind = AttackTargetKind.Creature;
+                    targetId = target.InstanceId;
                 }
-
-                _message = $"{attacker.Definition.Name} attacks you!";
-                yield return PlayAttackVideo(attacker);
-                _awaitingHumanBlock = true;
-                while (_awaitingHumanBlock) yield return null;
+                var attackSucceeded = false;
+                yield return RunAction((engine, state) => engine.DeclareAttack(state, ComputerId,
+                    attackerId, kind, targetId), result => attackSucceeded = result.Success);
+                if (!attackSucceeded) continue;
+                if (_state.PendingAttack != null)
+                {
+                    _message = $"{attacker.Definition.Name} attacks you!";
+                    yield return PlayAttackVideo(attacker);
+                    _awaitingHumanBlock = true;
+                    while (_awaitingHumanBlock) yield return null;
+                }
                 while (_state.PendingShieldTriggers.Count > 0) yield return null;
                 yield return new WaitForSeconds(0.2f);
             }
-
             if (!_state.IsFinished)
-            {
-                var end = _engine.EndTurn(_state, ComputerId);
-                ShowResult(end, end.Success ? "Your turn." : null);
-            }
+                yield return RunAction((engine, state) => engine.EndTurn(state, ComputerId),
+                    result => ShowResult(result, result.Success ? "Your turn." : null));
             _busy = false;
-        }
-
-        private bool TryComputerPlayCreature()
-        {
-            var computer = _state.Players[ComputerId];
-            foreach (var card in computer.Hand
-                         .Where(card => card.Definition.Type == CardType.Creature &&
-                                       card.Definition.ImplementationStatus != CardImplementationStatus.DataOnly)
-                         .OrderByDescending(card => card.Definition.Cost))
-            {
-                var payment = SelectPayment(computer, card);
-                if (payment.Count != _engine.MinimumManaCost(_state, card)) continue;
-                if (_engine.SummonCreature(_state, ComputerId, card.InstanceId, payment).Success)
-                {
-                    _message = $"Computer summoned {card.Definition.Name}.";
-                    return true;
-                }
-            }
-            return false;
         }
 
         private void ResolveHumanBlock(long blockerId)
         {
-            var result = blockerId == 0
-                ? _engine.DeclineBlockAndResolve(_state, HumanId)
-                : _engine.Block(_state, HumanId, blockerId);
-            ShowResult(result);
-            if (result.Success) _awaitingHumanBlock = false;
+            QueueAction((engine, state) => blockerId == 0
+                ? engine.DeclineBlockAndResolve(state, HumanId)
+                : engine.Block(state, HumanId, blockerId), result =>
+            {
+                ShowResult(result);
+                if (result.Success) _awaitingHumanBlock = false;
+            });
         }
 
-        private RuleResult CastHumanShieldTrigger(CardInstance trigger,
-            long preferredTarget = 0)
+        private void CastHumanShieldTrigger(CardInstance trigger, long preferredTarget = 0)
         {
-            var candidates = new List<long>();
-            if (preferredTarget != 0) candidates.Add(preferredTarget);
-            if (trigger.Definition.Type == CardType.Spell)
-                candidates.AddRange(_engine.GetSpellTargetCandidates(_state,
-                    HumanId, trigger.InstanceId).Select(card => card.InstanceId));
-            candidates.AddRange(_state.Players[ComputerId].BattleZone
-                .Select(card => card.InstanceId));
-            candidates.AddRange(_state.Players[HumanId].BattleZone
-                .Select(card => card.InstanceId));
-            candidates.AddRange(_state.Players[HumanId].Graveyard
-                .Where(card => card.Definition.IsCreature)
-                .Select(card => card.InstanceId));
-            candidates.Add(0);
-            RuleResult last = null;
-            foreach (var target in candidates.Distinct())
-            {
-                last = _engine.CastShieldTrigger(_state, HumanId, trigger.InstanceId, target);
-                if (last.Success) break;
-            }
-            last ??= RuleResult.Fail("No legal shield-trigger target.");
-            ShowResult(last, last.Success
-                ? $"Played {trigger.Definition.Name} for 0 mana."
-                : null);
-            return last;
+            QueueAction((engine, state) => engine.CastShieldTrigger(state, HumanId,
+                trigger.InstanceId, preferredTarget), result => ShowResult(result,
+                    result.Success ? $"Played {trigger.Definition.Name} for 0 mana." : null));
         }
 
-        private void ResolveComputerShieldTriggers()
+        private IEnumerator ResolveComputerShieldTriggers()
         {
-            foreach (var trigger in _state.PendingShieldTriggers.ToArray())
+            if (_resolvingComputerTriggers) yield break;
+            _resolvingComputerTriggers = true;
+            try
             {
-                var targets = _state.Players[HumanId].BattleZone.Select(card => card.InstanceId).Concat(new long[] { 0 });
-                var resolved = false;
-                foreach (var target in targets)
+                while (!_state.IsFinished)
                 {
-                    var result = _engine.CastShieldTrigger(_state, ComputerId, trigger.InstanceId, target);
-                    if (!result.Success) continue;
-                    resolved = true;
-                    break;
+                    var trigger = _state.PendingShieldTriggers.FirstOrDefault(c => _state.Players[ComputerId].Hand.Contains(c));
+                    if (trigger == null) break;
+                    var id = trigger.InstanceId;
+                    var succeeded = false;
+                    yield return RunAction((engine, state) => engine.CastShieldTrigger(state, ComputerId, id),
+                        result => succeeded = result.Success);
+                    if (!succeeded)
+                        yield return RunAction((engine, state) => engine.DeclineShieldTrigger(state, ComputerId, id));
                 }
-                if (!resolved) _state.PendingShieldTriggers.Remove(trigger);
             }
+            finally { _resolvingComputerTriggers = false; }
+        }
+
+        private void QueueAction(Func<RulesEngine, GameState, RuleResult> command,
+            Action<RuleResult> completed = null)
+        {
+            if (_actionDepth > 0) return;
+            StartCoroutine(RunAction(command, completed));
+        }
+
+        private IEnumerator RunAction(Func<RulesEngine, GameState, RuleResult> command,
+            Action<RuleResult> completed = null)
+        {
+            _actionDepth++;
+            CloseHandCardViewer();
+            var inspectedBefore = string.Join(",", _state.InspectedCards.Select(c =>
+                c.InstanceId + ":" + c.ZoneChangeVersion));
+            var session = new AbilityActionSession(_state, HumanId, command);
+            _actionSession = session;
+            while (!session.IsComplete) yield return null;
+            _state = session.State;
+            _selectedHand = null;
+            _selectedCreature = null;
+            _selectedOpponentCreature = null;
+            _shownAbilityChoice = null;
+            _actionSession = null;
+            var inspectedAfter = string.Join(",", _state.InspectedCards.Select(c =>
+                c.InstanceId + ":" + c.ZoneChangeVersion));
+            if (session.Result.Success && _state.InspectionPlayerId == HumanId &&
+                _state.InspectedCards.Count > 0 && inspectedAfter != inspectedBefore)
+            {
+                _inspectionReview = _state.InspectedCards.ToArray();
+                while (_inspectionReview != null) yield return null;
+            }
+            if (!_resolvingComputerTriggers && !_state.IsFinished &&
+                _state.PendingShieldTriggers.Any(c => _state.Players[ComputerId].Hand.Contains(c)))
+                yield return ResolveComputerShieldTriggers();
+            _actionDepth--;
+            completed?.Invoke(session.Result);
+        }
+
+        private string LiveAbilityText(CardInstance card)
+        {
+            var keywords = _engine.GetEffectiveKeywords(_state, card);
+            var text = "Current keywords: " + (keywords.Count == 0 ? "None" :
+                string.Join(", ", keywords.Select(k => FriendlyTiming(k.ToString()))));
+            foreach (var preview in _engine.GetAbilityPreviews(_state, card))
+            {
+                var rule = preview.Ability;
+                var status = preview.ChecksAtEvent
+                    ? "Resolves at " + FriendlyTiming(rule.Timing.ToString()) +
+                      (rule.Condition != null ? "; condition checked at that event" : string.Empty)
+                    : rule.Condition == null || preview.ConditionMetNow
+                        ? "Condition met now" : "Condition not met now";
+                text += "\n\n" + (preview.Source != card ? "Shared by " + preview.Source.Definition.Name + " · " : string.Empty) + status + (rule.Optional ? " · Optional" : string.Empty) + "\n" +
+                    (string.IsNullOrWhiteSpace(rule.RulesText) ? card.Definition.RulesText : rule.RulesText);
+            }
+            return text;
+        }
+
+        private static string FriendlyTiming(string text) =>
+            System.Text.RegularExpressions.Regex.Replace(text, "([a-z])([A-Z])", "$1 $2");
+
+        private void DrawAbilityChoice()
+        {
+            var choice = _actionSession?.PendingChoice;
+            if (_inspectionReview == null && choice == null)
+            {
+                GUI.Label(new Rect(80f, 80f, 1000f, 60f), "Resolving ability…");
+                return;
+            }
+            if (!ReferenceEquals(choice, _shownAbilityChoice))
+            {
+                _shownAbilityChoice = choice;
+                _abilitySelectedIds.Clear();
+                _abilityNumberText = choice?.Suggested.ToString() ?? string.Empty;
+                _abilityChoiceScroll = Vector2.zero;
+            }
+            var panel = new Rect(95f, 55f, _uiWidth - 190f, _uiHeight - 110f);
+            GUI.backgroundColor = new Color(0.12f, 0.17f, 0.23f);
+            GUI.Box(panel, GUIContent.none);
+            var heading = new GUIStyle(GUI.skin.label) { fontSize = 26, fontStyle = FontStyle.Bold, wordWrap = true };
+            var body = new GUIStyle(GUI.skin.label) { fontSize = 18, wordWrap = true };
+            var optionStyle = new GUIStyle(GUI.skin.button) { fontSize = 17, wordWrap = true, alignment = TextAnchor.MiddleLeft };
+            GUI.Label(new Rect(panel.x + 22f, panel.y + 14f, panel.width - 44f, 70f),
+                _inspectionReview != null ? "Revealed cards" :
+                    (choice.Source?.Definition.Name ?? "Ability") + " — Your choice", heading);
+            var viewport = new Rect(panel.x + 22f, panel.y + 90f, panel.width - 44f, panel.height - 180f);
+            var width = viewport.width - 24f;
+            var prompt = choice?.Prompt ?? "Review these cards before continuing.";
+            var selectedPower = choice == null ? 0 : _abilitySelectedIds.Sum(id =>
+                choice.CardPowers[choice.Cards.ToList().FindIndex(c => c.InstanceId == id)]);
+            if (choice != null && choice.MaximumCombinedPower > 0)
+                prompt += $"\nCombined power: {selectedPower} / {choice.MaximumCombinedPower}";
+            var promptHeight = body.CalcHeight(new GUIContent(prompt), width) + 20f;
+            var revealed = _inspectionReview ?? choice.RevealedCards;
+            var revealText = string.Join("\n\n", revealed.Select(c => c.Definition.Name + "\n" + c.Definition.RulesText));
+            var revealHeight = revealed.Count == 0 ? 0f : body.CalcHeight(new GUIContent(revealText), width) + 30f;
+            var labels = choice == null ? Array.Empty<string>() : choice.Kind == AbilityChoiceKind.Cards
+                ? choice.CardLabels.ToArray() : choice.Options.ToArray();
+            var heights = labels.Select(label => Mathf.Max(52f, optionStyle.CalcHeight(new GUIContent(label), width) + 18f)).ToArray();
+            var content = new Rect(0f, 0f, width, Mathf.Max(viewport.height - 18f,
+                promptHeight + revealHeight + heights.Sum() + labels.Length * 8f + 100f));
+            _abilityChoiceScroll = GUI.BeginScrollView(viewport, _abilityChoiceScroll, content);
+            GUI.Label(new Rect(0f, 0f, width, promptHeight), prompt, body);
+            var y = promptHeight;
+            if (revealHeight > 0f)
+            {
+                GUI.Label(new Rect(0f, y, width, revealHeight), revealText, body);
+                y += revealHeight;
+            }
+            int? option = null;
+            for (var i = 0; i < labels.Length; i++)
+            {
+                var selectedIndex = choice.Kind == AbilityChoiceKind.Cards
+                    ? _abilitySelectedIds.IndexOf(choice.Cards[i].InstanceId) : -1;
+                GUI.backgroundColor = selectedIndex >= 0
+                    ? new Color(0.62f, 0.43f, 0.12f) : new Color(0.20f, 0.30f, 0.39f);
+                if (GUI.Button(new Rect(0f, y, width, heights[i]),
+                    (selectedIndex >= 0 ? (selectedIndex + 1) + ". ✓ " : string.Empty) + labels[i], optionStyle))
+                {
+                    if (choice.Kind == AbilityChoiceKind.Cards)
+                    {
+                        var id = choice.Cards[i].InstanceId;
+                        if (!_abilitySelectedIds.Remove(id) && _abilitySelectedIds.Count < choice.Maximum &&
+                            (choice.MaximumCombinedPower <= 0 || selectedPower + choice.CardPowers[i] <= choice.MaximumCombinedPower))
+                            _abilitySelectedIds.Add(id);
+                    }
+                    else option = i;
+                }
+                y += heights[i] + 8f;
+            }
+            if (choice?.Kind == AbilityChoiceKind.Number)
+                _abilityNumberText = GUI.TextField(new Rect(0f, y, 260f, 48f), _abilityNumberText);
+            GUI.EndScrollView();
+            GUI.backgroundColor = new Color(0.28f, 0.55f, 0.36f);
+            var confirmRect = new Rect(panel.x + 22f, panel.yMax - 70f, panel.width - 44f, 48f);
+            var confirmCards = false;
+            int? number = null;
+            if (_inspectionReview != null)
+            {
+                if (GUI.Button(confirmRect, "Continue")) _inspectionReview = null;
+            }
+            else if (choice.Kind == AbilityChoiceKind.Cards)
+            {
+                GUI.enabled = _abilitySelectedIds.Count >= choice.Minimum && _abilitySelectedIds.Count <= choice.Maximum;
+                confirmCards = GUI.Button(confirmRect, $"Confirm {_abilitySelectedIds.Count} selected cards");
+            }
+            else if (choice.Kind == AbilityChoiceKind.Number)
+            {
+                var valid = int.TryParse(_abilityNumberText, out var value) && value >= choice.Minimum && value <= choice.Maximum;
+                GUI.enabled = valid;
+                if (GUI.Button(confirmRect, "Confirm number")) number = value;
+            }
+            GUI.enabled = true;
+            // Answer after closing the scroll view; the next choice may have a
+            // completely different candidate list and must render next frame.
+            if (confirmCards) _actionSession.AnswerCards(_abilitySelectedIds.ToArray());
+            else if (option.HasValue) _actionSession.AnswerValue(option.Value);
+            else if (number.HasValue) _actionSession.AnswerValue(number.Value);
         }
 
         private IEnumerator PlayAttackVideo(CardInstance attacker)
