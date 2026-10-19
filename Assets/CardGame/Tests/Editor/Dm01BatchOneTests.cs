@@ -1,3 +1,4 @@
+using System.Linq;
 using NUnit.Framework;
 
 namespace CardGame.Core.Tests
@@ -66,6 +67,33 @@ namespace CardGame.Core.Tests
             Assert.That(result.Success, Is.True);
             Assert.That(state.Players[0].Mana.Exists(card => card.InstanceId == 50), Is.True);
             Assert.That(state.Players[0].Mana.Find(card => card.InstanceId == 50).Tapped, Is.False);
+        }
+
+        [Test]
+        public void OnslaughterTriceps_MovesThePlayersChosenManaToGraveyard()
+        {
+            var state = EmptyState();
+            var engine = new RulesEngine();
+            var triceps = Instance(10,
+                TcgCatalog.ByName("Onslaughter Triceps").Single());
+            state.Players[0].Hand.Add(triceps);
+            AddMana(state, 4, Civilization.Fire);
+            var chosenMana = state.Players[0].Mana.Single(card =>
+                card.InstanceId == 102);
+
+            var candidates = engine.GetCreatureSummonChoiceCandidates(
+                state, 0, triceps.InstanceId);
+            var result = engine.SummonCreature(state, 0,
+                triceps.InstanceId, new long[] { 100, 101, 102 }, 0,
+                chosenMana.InstanceId);
+
+            Assert.That(candidates, Is.EquivalentTo(state.Players[0].Mana
+                .Concat(new[] { chosenMana })));
+            Assert.That(result.Success, Is.True);
+            Assert.That(state.Players[0].Graveyard, Does.Contain(chosenMana));
+            Assert.That(state.Players[0].Mana.Any(card =>
+                card.InstanceId == 100), Is.True,
+                "The deterministic first mana card must not replace the player's choice.");
         }
 
         [Test]
