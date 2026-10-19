@@ -640,7 +640,8 @@ namespace CardGame.Core
         public void ResolveCreatureEntry(GameState state, CardInstance creature,
             bool summonedByPlay, bool notifyOpponentPlayed,
             bool castByShieldTrigger = false,
-            CardInstance triggeringAttacker = null)
+            CardInstance triggeringAttacker = null,
+            long preferredTargetInstanceId = 0)
         {
             if (state == null || state.IsFinished || creature == null) return;
             var summonAbilities = RulesOf(state, creature)
@@ -733,7 +734,25 @@ namespace CardGame.Core
             {
                 _abilityResolutionDepth--;
             }
-            DrainPendingTriggers();
+            if (preferredTargetInstanceId == 0)
+            {
+                DrainPendingTriggers();
+                return;
+            }
+
+            var previousPreferredSource = _preferredSelectionSource;
+            var previousPreferredInstanceId = _preferredSelectionInstanceId;
+            _preferredSelectionSource = creature;
+            _preferredSelectionInstanceId = preferredTargetInstanceId;
+            try
+            {
+                DrainPendingTriggers();
+            }
+            finally
+            {
+                _preferredSelectionSource = previousPreferredSource;
+                _preferredSelectionInstanceId = previousPreferredInstanceId;
+            }
         }
 
         public void ResolveSpellCast(GameState state, CardInstance spell,

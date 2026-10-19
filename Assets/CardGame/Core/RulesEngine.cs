@@ -69,10 +69,12 @@ namespace CardGame.Core
             int playerId,
             long cardInstanceId,
             IReadOnlyCollection<long> manaInstanceIds,
-            long evolutionBaseInstanceId = 0)
+            long evolutionBaseInstanceId = 0,
+            long preferredSummonChoiceInstanceId = 0)
         {
             return SummonCreatureWithEvolutionBases(state, playerId, cardInstanceId, manaInstanceIds,
-                evolutionBaseInstanceId == 0 ? Array.Empty<long>() : new[] { evolutionBaseInstanceId });
+                evolutionBaseInstanceId == 0 ? Array.Empty<long>() : new[] { evolutionBaseInstanceId },
+                preferredSummonChoiceInstanceId);
         }
 
         public RuleResult SummonCreatureWithEvolutionBases(
@@ -80,7 +82,8 @@ namespace CardGame.Core
             int playerId,
             long cardInstanceId,
             IReadOnlyCollection<long> manaInstanceIds,
-            IReadOnlyCollection<long> evolutionBaseInstanceIds)
+            IReadOnlyCollection<long> evolutionBaseInstanceIds,
+            long preferredSummonChoiceInstanceId = 0)
         {
             var turnCheck = ValidateMainAction(state, playerId);
             if (!turnCheck.Success) return turnCheck;
@@ -124,6 +127,10 @@ namespace CardGame.Core
 
             var payment = ValidateManaPayment(state, player, creature, manaInstanceIds);
             if (!payment.Success) return payment;
+            if (preferredSummonChoiceInstanceId != 0 &&
+                !GetCreatureSummonChoiceCandidates(state, playerId, cardInstanceId)
+                    .Any(card => card.InstanceId == preferredSummonChoiceInstanceId))
+                return RuleResult.Fail("Choose a legal card for this creature's summon ability.");
 
             TapMana(player, manaInstanceIds);
             state.MainActionTakenThisTurn = true;
@@ -152,7 +159,8 @@ namespace CardGame.Core
             ResolveSummonAbilities(state, playerId, creature);
             if (state.IsFinished) return RuleResult.Ok();
             state.CreatureSummonedThisTurn[playerId] = true;
-            _abilities.ResolveCreatureEntry(state, creature, true, true);
+            _abilities.ResolveCreatureEntry(state, creature, true, true,
+                preferredTargetInstanceId: preferredSummonChoiceInstanceId);
             return RuleResult.Ok();
         }
 
@@ -207,6 +215,30 @@ namespace CardGame.Core
                    SingleCardTargetRules(spell).Any();
         }
 
+        public bool CreatureRequiresSingleCardSummonChoice(CardDefinition creature) =>
+            RequiredSingleCardSummonChoiceRule(creature) != null;
+
+        public string CreatureSingleCardSummonChoiceText(CardDefinition creature) =>
+            RequiredSingleCardSummonChoiceRule(creature)?.RulesText ?? string.Empty;
+
+        public IReadOnlyList<CardInstance> GetCreatureSummonChoiceCandidates(
+            GameState state,
+            int playerId,
+            long cardInstanceId)
+        {
+            if (state == null || playerId < 0 || playerId >= state.Players.Length)
+                return Array.Empty<CardInstance>();
+            var creature = Find(state.Players[playerId].Hand, cardInstanceId) ??
+                           Find(state.PendingShieldTriggers, cardInstanceId);
+            var rule = RequiredSingleCardSummonChoiceRule(creature?.Definition);
+            if (creature == null || rule == null) return Array.Empty<CardInstance>();
+            return _abilities.LegalCandidatesFor(state, creature, rule)
+                .Where(card => card != null)
+                .GroupBy(card => card.InstanceId)
+                .Select(group => group.First())
+                .ToArray();
+        }
+
         public bool SpellRequiresSingleCardTarget(CardDefinition spell)
         {
             if (spell == null || spell.Type != CardType.Spell) return false;
@@ -246,6 +278,21 @@ namespace CardGame.Core
                     rule.Timing == AbilityTiming.OnCast &&
                     rule.Selector != null &&
                     rule.Selector.Mode == RuleSelectionMode.Choose &&
+                    rule.Selector.Maximum == 1);
+        }
+
+        private static RuleAbilityDefinition RequiredSingleCardSummonChoiceRule(
+            CardDefinition creature)
+        {
+            if (creature == null || !creature.IsCreature) return null;
+            return (creature.RuleAbilities ?? Array.Empty<RuleAbilityDefinition>())
+                .FirstOrDefault(rule => rule != null &&
+                    rule.Timing == AbilityTiming.OnSummon &&
+                    !rule.Optional &&
+                    rule.Chooser != RuleController.Opponent &&
+                    rule.Selector != null &&
+                    rule.Selector.Mode == RuleSelectionMode.Choose &&
+                    rule.Selector.Minimum == 1 &&
                     rule.Selector.Maximum == 1);
         }
 
