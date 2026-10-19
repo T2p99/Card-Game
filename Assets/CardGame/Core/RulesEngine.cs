@@ -164,6 +164,77 @@ namespace CardGame.Core
             return RuleResult.Ok();
         }
 
+        public IReadOnlyList<CardInstance> GetEvolutionBaseCandidates(GameState state,
+            int playerId, long creatureId, IReadOnlyCollection<long> selectedIds = null)
+        {
+            var player = state.Players[playerId];
+            var creature = Find(player.Hand, creatureId);
+            if (creature == null || creature.Definition.Type != CardType.EvolutionCreature)
+                return Array.Empty<CardInstance>();
+            var requirements = EvolutionRequirements(creature);
+            var selected = (selectedIds ?? Array.Empty<long>()).ToArray();
+            if (selected.Distinct().Count() != selected.Length || selected.Length >= requirements.Length)
+                return Array.Empty<CardInstance>();
+            return player.BattleZone.Where(candidate => !selected.Contains(candidate.InstanceId) &&
+                HasEvolutionCompletion(state, requirements, player.BattleZone,
+                    selected.Concat(new[] { candidate.InstanceId }).ToArray())).ToArray();
+        }
+
+        private bool HasEvolutionCompletion(GameState state, EvolutionBaseRequirement[] requirements,
+            IReadOnlyList<CardInstance> available, long[] requiredIds)
+        {
+            var chosen = available.Where(c => requiredIds.Contains(c.InstanceId)).ToList();
+            if (chosen.Count != requiredIds.Length) return false;
+            return CompleteEvolutionSelection(state, requirements, available, chosen, 0);
+        }
+
+        private bool CompleteEvolutionSelection(GameState state, EvolutionBaseRequirement[] requirements,
+            IReadOnlyList<CardInstance> available, List<CardInstance> chosen, int start)
+        {
+            if (chosen.Count == requirements.Length)
+                return CanMatchEvolutionBases(state, requirements, chosen, new HashSet<CardInstance>(), 0);
+            for (var i = start; i < available.Count; i++)
+            {
+                if (chosen.Contains(available[i])) continue;
+                chosen.Add(available[i]);
+                if (CompleteEvolutionSelection(state, requirements, available, chosen, i + 1)) return true;
+                chosen.RemoveAt(chosen.Count - 1);
+            }
+            return false;
+        }
+
+        private static EvolutionBaseRequirement[] EvolutionRequirements(CardInstance creature) =>
+            creature.Definition.EvolutionRequirements.Length > 0
+                ? creature.Definition.EvolutionRequirements
+                : new[] { new EvolutionBaseRequirement { Races = creature.Definition.EvolutionRaces.Length > 0
+                    ? creature.Definition.EvolutionRaces : new[] { creature.Definition.EvolutionRace } } };
+
+        public RuleResult SummonCreatureWithChoices(GameState state, int playerId, long creatureId,
+            IReadOnlyCollection<long> manaIds, long preferredSummonChoice = 0)
+        {
+            var turnCheck = ValidateMainAction(state, playerId);
+            if (!turnCheck.Success) return turnCheck;
+            var creature = Find(state.Players[playerId].Hand, creatureId);
+            if (creature == null) return RuleResult.Fail("The selected creature is not in hand.");
+            var bases = new List<long>();
+            if (creature.Definition.Type == CardType.EvolutionCreature)
+                for (var i = 0; i < EvolutionRequirements(creature).Length; i++)
+                {
+                    var candidates = GetEvolutionBaseCandidates(state, playerId, creatureId, bases);
+                    if (candidates.Count == 0) return RuleResult.Fail("No legal evolution base combination is available.");
+                    var chosen = _abilities.ChooseEvolutionBase(state, playerId, creature, candidates, i);
+                    bases.Add(chosen.InstanceId);
+                }
+            return SummonCreatureWithEvolutionBases(state, playerId, creatureId, manaIds, bases, preferredSummonChoice);
+        }
+
+        public IReadOnlyList<AbilityPreview> GetAbilityPreviews(GameState state, CardInstance card) =>
+            _abilities.GetAbilityPreviews(state, card);
+
+        public IReadOnlyList<CardKeyword> GetEffectiveKeywords(GameState state, CardInstance card) =>
+            Enum.GetValues(typeof(CardKeyword)).Cast<CardKeyword>()
+                .Where(keyword => _abilities.HasKeyword(state, card, keyword)).ToArray();
+
         private bool CanMatchEvolutionBases(GameState state,
             IReadOnlyList<EvolutionBaseRequirement> requirements,
             IReadOnlyList<CardInstance> candidates,

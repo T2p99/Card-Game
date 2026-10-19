@@ -1126,6 +1126,36 @@ namespace CardGame.Core
                 ConditionMatches(state, blocker, ability.Condition));
         }
 
+        public IReadOnlyList<AbilityPreview> GetAbilityPreviews(GameState state, CardInstance card)
+        {
+            if (state == null || card == null) return Array.Empty<AbilityPreview>();
+            var sources = new List<CardInstance> { card };
+            var ownerId = FindOwnerId(state, card);
+            if (ownerId >= 0 && state.Players[ownerId].BattleZone.Contains(card))
+                sources.AddRange(state.Players[ownerId].BattleZone.Where(source => source != card &&
+                    RulesOf(state, source).Any(rule => rule.Timing == AbilityTiming.Static &&
+                        rule.Operation == AbilityOperation.ShareTapAbility &&
+                        ConditionMatches(state, source, rule.Condition) &&
+                        MatchesStaticTarget(state, source, card, rule.Selector))));
+            return sources.SelectMany(source => RulesOf(state, source)
+                .Where(rule => source == card || rule.Timing == AbilityTiming.TapAbility)
+                .Select(rule => new AbilityPreview
+                {
+                    Ability = rule, Source = source,
+                    ConditionMetNow = ConditionMatches(state, source, rule.Condition),
+                    ChecksAtEvent = rule.Timing != AbilityTiming.Static && rule.Timing != AbilityTiming.PlayRestriction
+                })).ToArray();
+        }
+
+        internal CardInstance ChooseEvolutionBase(GameState state, int playerId, CardInstance source,
+            IReadOnlyList<CardInstance> candidates, int slot)
+        {
+            var ability = new RuleAbilityDefinition("rules.evolution_base." + slot,
+                AbilityTiming.OnSummon, AbilityOperation.None)
+            { RulesText = source.Definition.RulesText };
+            return ChooseCardsSafely(state, playerId, source, ability, candidates, 1, 1).First();
+        }
+
         public bool CanUseTapAbility(GameState state, CardInstance creature)
         {
             if (AllBattleZoneCards(state).Any(source => RulesOf(state, source).Any(ability =>
@@ -1136,6 +1166,7 @@ namespace CardGame.Core
             return AllBattleZoneCards(state).Any(source => FindOwnerId(state, source) == FindOwnerId(state, creature) &&
                 RulesOf(state, source).Any(ability => ability.Timing == AbilityTiming.Static &&
                     ability.Operation == AbilityOperation.ShareTapAbility &&
+                    ConditionMatches(state, source, ability.Condition) &&
                     MatchesStaticTarget(state, source, creature, ability.Selector)));
         }
 
@@ -1211,6 +1242,7 @@ namespace CardGame.Core
                     source != creature && FindOwnerId(state, source) == ownerId &&
                     RulesOf(state, source).Any(ability => ability.Timing == AbilityTiming.Static &&
                             ability.Operation == AbilityOperation.ShareTapAbility &&
+                            ConditionMatches(state, source, ability.Condition) &&
                             MatchesStaticTarget(state, source, creature,
                                 ability.Selector))));
                 var distinctSources = abilitySources.Distinct().ToArray();

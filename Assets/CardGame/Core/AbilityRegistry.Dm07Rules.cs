@@ -281,7 +281,7 @@ namespace CardGame.Core
             {
                 var condition = NoShieldsCondition();
                 AppendConditionalSelfKeyword(card, line, CardKeyword.Blocker, condition);
-                AppendConditionalSelfKeyword(card, line, CardKeyword.UntapAtEndOfTurn, condition);
+                AddEndTurnSelfUntap(card, line, true, condition);
                 return true;
             }
 

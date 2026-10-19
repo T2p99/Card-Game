@@ -205,6 +205,14 @@ namespace CardGame.Core
         Permanent
     }
 
+    public sealed class AbilityPreview
+    {
+        public RuleAbilityDefinition Ability;
+        public CardInstance Source;
+        public bool ConditionMetNow;
+        public bool ChecksAtEvent;
+    }
+
     [Serializable]
     public sealed class CardFilterDefinition
     {

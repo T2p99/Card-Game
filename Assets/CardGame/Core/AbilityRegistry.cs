@@ -279,7 +279,7 @@ namespace CardGame.Core
             }
             if (text.Equals("At the end of each of your turns, you may untap this creature.", StringComparison.OrdinalIgnoreCase) ||
                 text.Equals("At the end of each of your turns, untap this creature.", StringComparison.OrdinalIgnoreCase))
-                return AddKeyword(card, CardKeyword.UntapAtEndOfTurn);
+                return AddEndTurnSelfUntap(card, line, text.IndexOf("you may", StringComparison.OrdinalIgnoreCase) >= 0);
 
             match = SummonDrawCards.Match(text);
             if (match.Success)
@@ -330,6 +330,18 @@ namespace CardGame.Core
             if (text.Equals("Choose a creature in the battle zone and return it to its owner's hand.", StringComparison.OrdinalIgnoreCase))
                 return AddSelectedMove(card, line, DefaultActionTiming(card), RuleController.Either, RuleZone.BattleZone, RuleZone.Hand);
             return TryApplySimpleRule(card, line, text);
+        }
+
+        private static bool AddEndTurnSelfUntap(CardDefinition card, PrintedRuleLine line,
+            bool optional, AbilityConditionDefinition condition = null)
+        {
+            var ability = new RuleAbilityDefinition(line.Id, AbilityTiming.EndOfOwnerTurn, AbilityOperation.Untap)
+            {
+                RulesText = line.Text, Optional = optional, Condition = condition,
+                Selector = new RuleSelectorDefinition { Mode = RuleSelectionMode.SourceCard }
+            };
+            card.RuleAbilities = card.RuleAbilities.Concat(new[] { ability }).ToArray();
+            return true;
         }
 
         private static bool AddKeyword(CardDefinition card, CardKeyword keyword, int value = 0)
