@@ -413,6 +413,26 @@ namespace CardGame.Core.Tests
             Assert.That(state.PendingShieldTriggers.Single(), Is.SameAs(card));
         }
 
+        [Test]
+        public void InheritedSurvivorTriggerChoices_ShowTheInheritedRulesText()
+        {
+            var state = State();
+            var receiver = Creature("receiver"); receiver.Abilities = new[] { new KeywordAbility(CardKeyword.Survivor) };
+            state.Players[0].BattleZone.Add(Card(10, receiver));
+            for (var i = 0; i < 2; i++)
+            {
+                var donor = Creature("donor " + i); donor.Abilities = new[] { new KeywordAbility(CardKeyword.Survivor) };
+                donor.RuleAbilities = new[] { new RuleAbilityDefinition("shared " + i, AbilityTiming.OnAttack, AbilityOperation.Draw) {
+                    RulesText = "Shared draw " + (i + 1), Amount = i + 1, IsSurvivorAbility = true } };
+                state.Players[0].BattleZone.Add(Card(20 + i, donor));
+            }
+            var session = new AbilityActionSession(state, 0, (e, s) => e.DeclareAttack(s, 0, 10, AttackTargetKind.Player));
+            Assert.That(session.PendingChoice.Options, Is.EqualTo(new[] { "Shared draw 1", "Shared draw 2" }));
+            session.AnswerValue(1);
+            Assert.That(session.Result.Success, Is.True);
+            Assert.That(session.State.Players[0].Hand.Count, Is.EqualTo(3));
+        }
+
         private static string Fingerprint(GameState state) =>
             state.ActivePlayerId + ":" + state.TurnNumber + ":" + state.Phase + ":" + state.WinnerPlayerId + ":" +
             state.RandomActionIndex + ":" + state.MainActionTakenThisTurn + ":" + string.Join("|", state.Players.SelectMany(p =>
