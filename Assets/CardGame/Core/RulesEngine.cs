@@ -313,7 +313,7 @@ namespace CardGame.Core
             }
         }
 
-        private static void AddLegacySpellTargetCandidates(
+        private void AddLegacySpellTargetCandidates(
             GameState state,
             int playerId,
             SpellEffectDefinition effect,
@@ -332,7 +332,7 @@ namespace CardGame.Core
                     break;
                 case SpellEffectKind.DestroyOpponentCreatureAtMostPower:
                     foreach (var card in opponent.BattleZone.Where(card =>
-                                 card.Definition.Power <= effect.Value))
+                                 _abilities.CurrentPower(state, card) <= effect.Value))
                         candidates.Add(card);
                     break;
                 case SpellEffectKind.ReturnOwnCreatureFromGraveyard:
@@ -540,11 +540,22 @@ namespace CardGame.Core
             player.Graveyard.Add(spell);
         }
 
+        public int CurrentPower(GameState state, CardInstance card, bool attacking = false) =>
+            _abilities.CurrentPower(state, card, attacking);
+
+        public int MinimumManaCost(GameState state, CardInstance card) =>
+            Math.Max(card.Definition.Civilizations.Distinct().Count(),
+                _abilities.CurrentCost(state, card));
+
+        public int MaximumManaCost(GameState state, CardInstance card) =>
+            Math.Max(card.Definition.Civilizations.Distinct().Count(),
+                _abilities.MaximumPayableCost(state, card));
+
         public bool HasSummoningSickness(GameState state, CardInstance creature) =>
             creature.EnteredBattleZoneOnTurn == state.TurnNumber &&
             !_abilities.HasKeyword(state, creature, CardKeyword.SpeedAttacker);
 
-        public RuleResult DeclareAttack(
+        public RuleResult ValidateAttack(
             GameState state,
             int playerId,
             long attackerInstanceId,
@@ -610,6 +621,26 @@ namespace CardGame.Core
                                                preferredTargets.All(target => target.InstanceId != targetCreatureInstanceId)))
                 return RuleResult.Fail("This attacker must attack a required creature if able.");
 
+            return RuleResult.Ok();
+        }
+
+        public IReadOnlyList<CardInstance> GetAttackTargetCandidates(
+            GameState state, int playerId, long attackerInstanceId) =>
+            state.Players[1 - playerId].BattleZone.Where(target =>
+                ValidateAttack(state, playerId, attackerInstanceId,
+                    AttackTargetKind.Creature, target.InstanceId).Success).ToArray();
+
+        public RuleResult DeclareAttack(
+            GameState state,
+            int playerId,
+            long attackerInstanceId,
+            AttackTargetKind targetKind,
+            long targetCreatureInstanceId = 0)
+        {
+            var check = ValidateAttack(state, playerId, attackerInstanceId,
+                targetKind, targetCreatureInstanceId);
+            if (!check.Success) return check;
+            var attacker = Find(state.ActivePlayer.BattleZone, attackerInstanceId);
             state.Phase = GamePhase.Attack;
             state.RequiredBlockerInstanceId = 0;
             attacker.Tapped = true;
@@ -654,7 +685,7 @@ namespace CardGame.Core
                 _abilities.LegalCandidatesFor(state, creature, rule).ToArray();
         }
 
-        public RuleResult UseTapAbility(GameState state, int playerId, long creatureInstanceId,
+        public RuleResult ValidateTapAbility(GameState state, int playerId, long creatureInstanceId,
             long preferredTargetInstanceId = 0)
         {
             if (state.IsFinished) return RuleResult.Fail("The game is already finished.");
@@ -674,13 +705,23 @@ namespace CardGame.Core
                 !GetTapAbilityTargetCandidates(state, playerId, creatureInstanceId)
                     .Any(card => card.InstanceId == preferredTargetInstanceId))
                 return RuleResult.Fail("Choose a legal target for this tap ability.");
+            return RuleResult.Ok();
+        }
+
+        public RuleResult UseTapAbility(GameState state, int playerId, long creatureInstanceId,
+            long preferredTargetInstanceId = 0)
+        {
+            var check = ValidateTapAbility(state, playerId, creatureInstanceId,
+                preferredTargetInstanceId);
+            if (!check.Success) return check;
+            var creature = Find(state.Players[playerId].BattleZone, creatureInstanceId);
             state.Phase = GamePhase.Attack;
             creature.Tapped = true;
             _abilities.ResolveTapAbility(state, creature, preferredTargetInstanceId);
             return RuleResult.Ok();
         }
 
-        public RuleResult Block(GameState state, int defendingPlayerId, long blockerInstanceId)
+        public RuleResult ValidateBlock(GameState state, int defendingPlayerId, long blockerInstanceId)
         {
             var attack = state.PendingAttack;
             if (attack == null) return RuleResult.Fail("There is no pending attack.");
@@ -699,7 +740,6 @@ namespace CardGame.Core
             if (attacker == null ||
                 attacker.ZoneChangeVersion != attack.AttackerZoneChangeVersion)
             {
-                ConcludeInterruptedAttack(state, attack);
                 return RuleResult.Fail("The attacking creature is no longer in this attack.");
             }
             if (!_abilities.CanUseAsBlocker(state, blocker, attacker))
@@ -716,6 +756,28 @@ namespace CardGame.Core
             if (blockerPowerLimit > 0 && _abilities.CurrentPower(state, blocker) <= blockerPowerLimit)
                 return RuleResult.Fail($"This attacker cannot be blocked by a creature with power {blockerPowerLimit} or less.");
 
+            return RuleResult.Ok();
+        }
+
+        public IReadOnlyList<CardInstance> GetBlockerCandidates(GameState state, int defendingPlayerId) =>
+            state.Players[defendingPlayerId].BattleZone.Where(blocker =>
+                ValidateBlock(state, defendingPlayerId, blocker.InstanceId).Success).ToArray();
+
+        public RuleResult Block(GameState state, int defendingPlayerId, long blockerInstanceId)
+        {
+            var check = ValidateBlock(state, defendingPlayerId, blockerInstanceId);
+            if (!check.Success)
+            {
+                var pending = state.PendingAttack;
+                if (pending != null && !PendingAttackParticipantsRemain(state, pending))
+                    ConcludeInterruptedAttack(state, pending);
+                return check;
+            }
+            var attack = state.PendingAttack;
+            var defender = state.Players[defendingPlayerId];
+            var blocker = Find(defender.BattleZone, blockerInstanceId);
+            var attackingPlayer = state.Players[1 - defendingPlayerId];
+            var attacker = Find(attackingPlayer.BattleZone, attack.AttackerInstanceId);
             if (state.BlockedCreatureGetsSlayerThisTurn[attackingPlayer.PlayerId] &&
                 !attacker.TemporaryKeywords.Contains(CardKeyword.Slayer))
                 attacker.TemporaryKeywords.Add(CardKeyword.Slayer);
@@ -1089,10 +1151,8 @@ namespace CardGame.Core
             var civilizationCount = card.Civilizations.Distinct().Count();
             // Required civilization payment takes precedence when a reduction
             // would make the payable cost smaller than the civilization count.
-            var minimumCost = Math.Max(civilizationCount,
-                _abilities.CurrentCost(state, cardInstance));
-            var maximumCost = Math.Max(civilizationCount,
-                _abilities.MaximumPayableCost(state, cardInstance));
+            var minimumCost = MinimumManaCost(state, cardInstance);
+            var maximumCost = MaximumManaCost(state, cardInstance);
             if (selectedManaIds == null || selectedManaIds.Count < minimumCost ||
                 selectedManaIds.Count > maximumCost)
                 return minimumCost == maximumCost
@@ -1173,7 +1233,7 @@ namespace CardGame.Core
                         break;
                     case SpellEffectKind.DestroyOpponentCreatureAtMostPower:
                         target = Find(state.Players[1 - playerId].BattleZone, targetInstanceId);
-                        if (target == null || target.Definition.Power > effect.Value)
+                        if (target == null || _abilities.CurrentPower(state, target) > effect.Value)
                             return RuleResult.Fail($"Choose an opponent's creature with power {effect.Value} or less.");
                         break;
                     case SpellEffectKind.ReturnOwnCreatureFromGraveyard:
