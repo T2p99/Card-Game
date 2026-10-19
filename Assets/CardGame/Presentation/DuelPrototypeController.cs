@@ -888,7 +888,7 @@ namespace CardGame.Presentation
                 {
                     GUI.Label(new Rect(inset.x + 4, inset.y + 4, inset.width - 8, 36), card.Definition.Name);
                     GUI.Label(new Rect(inset.x + 4, inset.yMax - 42, inset.width - 8, 38),
-                        $"Cost {card.Definition.Cost}\n{(card.Definition.IsCreature ? $"Power {card.Definition.Power}" : "Spell")}");
+                        $"Mana {ManaCostText(card)}\n{(card.Definition.IsCreature ? $"Power {_engine.CurrentPower(_state, card)}" : "Spell")}");
                 }
             }
 
@@ -940,11 +940,9 @@ namespace CardGame.Presentation
             var selectedHand = _selectedHand;
             var selectedCreature = _selectedCreature;
             var modalOpen = _showHandCardViewer || _showVideo;
-            var legalCreatureTargets = selectedCreature != null && !selectedCreature.Tapped
-                ? _state.Players[ComputerId].BattleZone
-                    .Where(card => card.Tapped ||
-                                   selectedCreature.Definition.HasKeyword(CardKeyword.AttackUntappedCreature))
-                    .ToArray()
+            var legalCreatureTargets = selectedCreature != null
+                ? _engine.GetAttackTargetCandidates(_state, HumanId,
+                    selectedCreature.InstanceId).ToArray()
                 : Array.Empty<CardInstance>();
             var readyBlockers = selectedCreature != null && !selectedCreature.Tapped
                 ? EligibleBlockers(_state.Players[ComputerId]).Count()
@@ -966,7 +964,7 @@ namespace CardGame.Presentation
             {
                 estimatedHeight += PanelTextHeight(selected.Definition.Name, wrapStyle, contentWidth) +
                                    PanelTextHeight(
-                                       $"Cost {selected.Definition.Cost}  •  Power {selected.Definition.Power}",
+                                       $"Mana {ManaCostText(selected)}  •  Power {_engine.CurrentPower(_state, selected)}",
                                        wrapStyle, contentWidth) +
                                    PanelTextHeight(selected.Definition.RulesText, wrapStyle, contentWidth) + 18f;
             }
@@ -998,7 +996,7 @@ namespace CardGame.Presentation
                         if (legalCreatureTargets.Length == 0 &&
                             _state.Players[ComputerId].BattleZone.Count > 0)
                             estimatedHeight += PanelTextHeight(
-                                "No opposing creature is currently a legal attack target. Normally, only turned creatures can be attacked.",
+                                "No opposing creature is a legal attack target under the current effects.",
                                 wrapStyle, contentWidth) + 8f;
                     }
                 }
@@ -1041,7 +1039,7 @@ namespace CardGame.Presentation
             {
                 DrawPanelLabel(ref y, contentWidth, selected.Definition.Name, wrapStyle, 22f, 2f);
                 DrawPanelLabel(ref y, contentWidth,
-                    $"Cost {selected.Definition.Cost}  •  Power {selected.Definition.Power}",
+                    $"Mana {ManaCostText(selected)}  •  Power {_engine.CurrentPower(_state, selected)}",
                     wrapStyle, 22f, 2f);
                 DrawPanelLabel(ref y, contentWidth, selected.Definition.RulesText, wrapStyle, 22f, 10f);
             }
@@ -1069,12 +1067,15 @@ namespace CardGame.Presentation
                     }
                     else
                     {
+                        GUI.enabled = !_busy && _engine.ValidateAttack(_state, HumanId,
+                            selectedCreature.InstanceId, AttackTargetKind.Player).Success;
                         if (DrawPanelButton(ref y, contentWidth, "Attack Player", 38f, 6f))
                             StartHumanAttack(AttackTargetKind.Player, 0);
 
+                        GUI.enabled = !_busy && !_state.IsFinished && _state.ActivePlayerId == HumanId;
                         foreach (var target in legalCreatureTargets)
                             if (DrawPanelButton(ref y, contentWidth,
-                                    $"Attack {target.Definition.Name} — {target.Definition.Power}", 40f, 6f))
+                                    $"Attack {target.Definition.Name} — {_engine.CurrentPower(_state, target)}", 40f, 6f))
                                 StartHumanAttack(AttackTargetKind.Creature, target.InstanceId);
 
                         if (readyBlockers > 0)
@@ -1084,7 +1085,7 @@ namespace CardGame.Presentation
                         if (legalCreatureTargets.Length == 0 &&
                             _state.Players[ComputerId].BattleZone.Count > 0)
                             DrawPanelLabel(ref y, contentWidth,
-                                "No opposing creature is currently a legal attack target. Normally, only turned creatures can be attacked.",
+                                "No opposing creature is a legal attack target under the current effects.",
                                 wrapStyle, 22f, 8f);
                     }
                 }
@@ -1295,9 +1296,9 @@ namespace CardGame.Presentation
             var bodyStyle = new GUIStyle(GUI.skin.label) { fontSize = 18, wordWrap = true };
             GUI.Label(new Rect(infoRect.x, infoRect.y, infoRect.width, 72f), _selectedHand.Definition.Name, titleStyle);
             GUI.Label(new Rect(infoRect.x, infoRect.y + 78f, infoRect.width, 58f),
-                $"Cost: {_selectedHand.Definition.Cost}     Type: {_selectedHand.Definition.Type}\n" +
+                $"Printed cost: {_selectedHand.Definition.Cost}  •  Mana: {ManaCostText(_selectedHand)}     Type: {_selectedHand.Definition.Type}\n" +
                 $"Civilization: {string.Join(", ", _selectedHand.Definition.Civilizations)}" +
-                (_selectedHand.Definition.IsCreature ? $"     Power: {_selectedHand.Definition.Power}" : string.Empty), bodyStyle);
+                (_selectedHand.Definition.IsCreature ? $"     Power: {_engine.CurrentPower(_state, _selectedHand)} (attacking: {_engine.CurrentPower(_state, _selectedHand, true)})" : string.Empty), bodyStyle);
             GUI.Label(new Rect(infoRect.x, infoRect.y + 142f, infoRect.width, 118f),
                 string.IsNullOrWhiteSpace(_selectedHand.Definition.RulesText)
                     ? "This card has no printed ability."
@@ -1469,23 +1470,19 @@ namespace CardGame.Presentation
 
             var attacker = _selectedHand;
             var canUseControls = !_busy && !_state.IsFinished && _state.ActivePlayerId == HumanId;
-            var hasSummoningSickness = _engine.HasSummoningSickness(_state, attacker);
-            if (attacker.Tapped || hasSummoningSickness)
+            var playerAttack = _engine.ValidateAttack(_state, HumanId,
+                attacker.InstanceId, AttackTargetKind.Player);
+            var canAttackPlayer = playerAttack.Success;
+            var legalTargets = _engine.GetAttackTargetCandidates(_state, HumanId,
+                attacker.InstanceId);
+            var canUseTapAbility = _engine.ValidateTapAbility(_state, HumanId,
+                attacker.InstanceId).Success;
+            if (!canAttackPlayer && legalTargets.Count == 0 && !canUseTapAbility)
             {
-                var reason = attacker.Tapped
-                    ? "TURNED — this creature cannot attack again this turn."
-                    : "This creature has summoning sickness and cannot attack this turn.";
-                GUI.Label(new Rect(area.x + 10f, area.y + 40f, area.width - 20f, 48f), reason, bodyStyle);
+                GUI.Label(new Rect(area.x + 10f, area.y + 40f, area.width - 20f, 72f),
+                    playerAttack.Error, bodyStyle);
                 return;
             }
-
-            var canAttackPlayer = !attacker.Definition.HasKeyword(CardKeyword.CannotAttack) &&
-                !attacker.Definition.HasKeyword(CardKeyword.CannotAttackPlayers);
-            var canAttackCreatures = !attacker.Definition.HasKeyword(CardKeyword.CannotAttack);
-            var canAttackUntapped = attacker.Definition.HasKeyword(CardKeyword.AttackUntappedCreature);
-            var legalTargets = canAttackCreatures
-                ? _state.Players[ComputerId].BattleZone.Where(card => card.Tapped || canAttackUntapped).ToList()
-                : new List<CardInstance>();
 
             var buttonHeight = 46f;
             var buttonWidth = Mathf.Clamp(area.width * 0.31f, 150f, 230f);
@@ -1552,7 +1549,7 @@ namespace CardGame.Presentation
                     GUI.EndScrollView();
                     noteTop += 102f;
                 }
-                GUI.enabled = canUseControls &&
+                GUI.enabled = canUseControls && canUseTapAbility &&
                               (tapTargets.Count == 0 || _selectedTapTargetId != 0);
                 GUI.backgroundColor = new Color(0.30f, 0.58f, 0.36f);
                 if (GUI.Button(new Rect(area.x + 10f, noteTop,
@@ -1610,9 +1607,7 @@ namespace CardGame.Presentation
                     _selectedSummonChoiceId = candidates[0].InstanceId;
             }
             _selectingManaPayment = true;
-            var paymentMessage = _selectedHand.Definition.Cost == 0
-                ? "This card costs no mana. Confirm to play it."
-                : $"Select exactly {_selectedHand.Definition.Cost} untapped mana cards to turn.";
+            var paymentMessage = $"Select {ManaCostText(_selectedHand)} untapped mana cards to turn.";
             _viewerMessage = _engine.CreatureRequiresSingleCardSummonChoice(
                 _selectedHand.Definition)
                 ? paymentMessage + " Also choose the card required by its summon ability."
@@ -1622,7 +1617,8 @@ namespace CardGame.Presentation
         private void DrawManaPaymentSelector(Rect area)
         {
             var player = _state.Players[HumanId];
-            var cost = _selectedHand.Definition.Cost;
+            var cost = _engine.MinimumManaCost(_state, _selectedHand);
+            var maximumCost = _engine.MaximumManaCost(_state, _selectedHand);
             var isEvolution = _selectedHand.Definition.Type == CardType.EvolutionCreature;
             var manaTop = area.y;
             var spellUsesTarget = _selectedHand.Definition.Type == CardType.Spell &&
@@ -1779,7 +1775,7 @@ namespace CardGame.Presentation
             }
 
             GUI.Label(new Rect(area.x, manaTop, area.width, 28f),
-                $"Mana selected: {_selectedManaIds.Count} / {cost}. At least one must match the card's civilization.");
+                $"Mana selected: {_selectedManaIds.Count} / {ManaCostText(_selectedHand)}. At least one must match the card's civilization.");
 
             var viewport = new Rect(area.x, manaTop + 32f, area.width, Mathf.Max(70f, area.yMax - manaTop - 100f));
             GUI.Box(viewport, GUIContent.none);
@@ -1808,14 +1804,15 @@ namespace CardGame.Presentation
             }
             GUI.EndScrollView();
 
-            var confirmEnabled = _selectedManaIds.Count == cost &&
+            var confirmEnabled = _selectedManaIds.Count >= cost &&
+                                 _selectedManaIds.Count <= maximumCost &&
                                  (!isEvolution || _selectedEvolutionBaseId != 0) &&
                                  (!spellRequiresTarget ||
                                   _selectedSpellTargetId != 0) &&
                                  (!requiresSummonChoice ||
                                   _selectedSummonChoiceId != 0);
             GUI.enabled = confirmEnabled;
-            if (GUI.Button(new Rect(area.x, area.yMax - 56f, area.width * 0.62f, 48f), $"Confirm — Turn {cost} Mana"))
+            if (GUI.Button(new Rect(area.x, area.yMax - 56f, area.width * 0.62f, 48f), $"Confirm — Turn {_selectedManaIds.Count} Mana"))
                 ConfirmManualPlay();
             GUI.enabled = true;
             if (GUI.Button(new Rect(area.x + area.width * 0.66f, area.yMax - 56f, area.width * 0.34f, 48f), "Back"))
@@ -1921,7 +1918,7 @@ namespace CardGame.Presentation
             yield return PlayAttackVideo(attacker);
             var blockers = EligibleBlockers(_state.Players[ComputerId]).ToList();
             var result = blockers.Count > 0
-                ? _engine.Block(_state, ComputerId, blockers.OrderBy(card => card.Definition.Power).First().InstanceId)
+                ? _engine.Block(_state, ComputerId, blockers.OrderBy(card => _engine.CurrentPower(_state, card)).First().InstanceId)
                 : _engine.DeclineBlockAndResolve(_state, ComputerId);
             ShowResult(result, result.Success ? $"{attacker.Definition.Name} attacked." : null);
             ResolveComputerShieldTriggers();
@@ -1996,8 +1993,8 @@ namespace CardGame.Presentation
                                        card.Definition.ImplementationStatus != CardImplementationStatus.DataOnly)
                          .OrderByDescending(card => card.Definition.Cost))
             {
-                var payment = SelectPayment(computer, card.Definition);
-                if (payment.Count != card.Definition.Cost) continue;
+                var payment = SelectPayment(computer, card);
+                if (payment.Count != _engine.MinimumManaCost(_state, card)) continue;
                 if (_engine.SummonCreature(_state, ComputerId, card.InstanceId, payment).Success)
                 {
                     _message = $"Computer summoned {card.Definition.Name}.";
@@ -2122,19 +2119,33 @@ namespace CardGame.Presentation
                 ReturnToDeckSetup();
         }
 
-        private static IReadOnlyCollection<long> SelectPayment(PlayerState player, CardDefinition definition)
+        private string ManaCostText(CardInstance card)
         {
-            if (definition.Cost == 0) return Array.Empty<long>();
-            var untapped = player.Mana.Where(card => !card.Tapped).ToList();
-            var matching = untapped.FirstOrDefault(card => card.Definition.SharesCivilizationWith(definition));
-            if (matching == null || untapped.Count < definition.Cost) return Array.Empty<long>();
-            var selected = new List<long> { matching.InstanceId };
-            selected.AddRange(untapped.Where(card => card != matching).Take(definition.Cost - 1).Select(card => card.InstanceId));
-            return selected;
+            var minimum = _engine.MinimumManaCost(_state, card);
+            var maximum = _engine.MaximumManaCost(_state, card);
+            return minimum == maximum ? minimum.ToString() : $"{minimum}–{maximum}";
         }
 
-        private static IEnumerable<CardInstance> EligibleBlockers(PlayerState player) =>
-            player.BattleZone.Where(card => !card.Tapped && card.Definition.HasKeyword(CardKeyword.Blocker));
+        private IReadOnlyCollection<long> SelectPayment(PlayerState player, CardInstance card)
+        {
+            var cost = _engine.MinimumManaCost(_state, card);
+            var untapped = player.Mana.Where(mana => !mana.Tapped).ToList();
+            var selected = new List<long>();
+            foreach (var civilization in card.Definition.Civilizations.Distinct())
+            {
+                var matching = untapped.FirstOrDefault(mana =>
+                    !selected.Contains(mana.InstanceId) &&
+                    mana.Definition.Civilizations.Contains(civilization));
+                if (matching == null) return Array.Empty<long>();
+                selected.Add(matching.InstanceId);
+            }
+            selected.AddRange(untapped.Where(mana => !selected.Contains(mana.InstanceId))
+                .Take(cost - selected.Count).Select(mana => mana.InstanceId));
+            return selected.Count == cost ? selected : (IReadOnlyCollection<long>)Array.Empty<long>();
+        }
+
+        private IEnumerable<CardInstance> EligibleBlockers(PlayerState player) =>
+            _engine.GetBlockerCandidates(_state, player.PlayerId);
 
         private void ShowResult(RuleResult result, string successMessage = null)
         {
