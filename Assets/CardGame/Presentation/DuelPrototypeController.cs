@@ -43,6 +43,7 @@ namespace CardGame.Presentation
         private long _selectedEvolutionBaseId;
         private long _selectedSpellTargetId;
         private long _selectedSummonChoiceId;
+        private long _selectedTapTargetId;
         private Texture2D _cardBack;
 
         private RulesEngine _engine;
@@ -1186,6 +1187,7 @@ namespace CardGame.Presentation
 
         private void OpenFaceUpCardViewer(CardInstance card, IReadOnlyList<CardInstance> cards, string zoneName)
         {
+            _selectedTapTargetId = 0;
             _selectedHand = card;
             _viewerCards = cards;
             _viewerZoneName = zoneName;
@@ -1202,6 +1204,7 @@ namespace CardGame.Presentation
 
         private void CloseHandCardViewer()
         {
+            _selectedTapTargetId = 0;
             var wasHandViewer = _viewerAllowsHandActions;
             _showHandCardViewer = false;
             _viewerCards = null;
@@ -1219,6 +1222,7 @@ namespace CardGame.Presentation
 
         private void NavigateViewer(int direction)
         {
+            _selectedTapTargetId = 0;
             var cards = _viewerCards;
             if (cards == null || cards.Count == 0)
             {
@@ -1333,7 +1337,8 @@ namespace CardGame.Presentation
             {
                 var viewingOwnBattleZone = ReferenceEquals(_viewerCards, _state.Players[HumanId].BattleZone);
                 if (viewingOwnBattleZone)
-                    DrawEnlargedBattleActions(new Rect(infoRect.x, infoRect.yMax - 178f, infoRect.width, 162f), bodyStyle);
+                    DrawEnlargedBattleActions(new Rect(infoRect.x, infoRect.y + 314f,
+                        infoRect.width, infoRect.height - 314f), bodyStyle);
                 else
                     GUI.Label(new Rect(infoRect.x, infoRect.yMax - 66f, infoRect.width, 44f),
                         "Face-up zone viewer — use the arrows to inspect the other cards in this zone.", bodyStyle);
@@ -1464,8 +1469,7 @@ namespace CardGame.Presentation
 
             var attacker = _selectedHand;
             var canUseControls = !_busy && !_state.IsFinished && _state.ActivePlayerId == HumanId;
-            var hasSummoningSickness = attacker.EnteredBattleZoneOnTurn == _state.TurnNumber &&
-                !attacker.Definition.HasKeyword(CardKeyword.SpeedAttacker);
+            var hasSummoningSickness = _engine.HasSummoningSickness(_state, attacker);
             if (attacker.Tapped || hasSummoningSickness)
             {
                 var reason = attacker.Tapped
@@ -1513,13 +1517,69 @@ namespace CardGame.Presentation
             GUI.EndScrollView();
             GUI.enabled = true;
 
+            var noteTop = area.y + 108f;
+            if (_engine.HasTapAbility(_state, attacker))
+            {
+                var tapTargets = _engine.GetTapAbilityTargetCandidates(
+                    _state, HumanId, attacker.InstanceId);
+                if (!tapTargets.Any(card => card.InstanceId == _selectedTapTargetId))
+                    _selectedTapTargetId = tapTargets.Count == 1
+                        ? tapTargets[0].InstanceId : 0;
+                if (tapTargets.Count > 0)
+                {
+                    GUI.Label(new Rect(area.x + 10f, noteTop, area.width - 20f, 28f),
+                        "Choose the card affected by the tap ability:", bodyStyle);
+                    var targetViewport = new Rect(area.x + 8f, noteTop + 30f,
+                        area.width - 16f, 66f);
+                    var targetContent = new Rect(0f, 0f,
+                        Mathf.Max(targetViewport.width - 18f,
+                            tapTargets.Count * (buttonWidth + 10f)), buttonHeight);
+                    _summonChoiceScroll = GUI.BeginScrollView(targetViewport,
+                        _summonChoiceScroll, targetContent);
+                    GUI.enabled = canUseControls;
+                    for (var i = 0; i < tapTargets.Count; i++)
+                    {
+                        var target = tapTargets[i];
+                        GUI.backgroundColor = _selectedTapTargetId == target.InstanceId
+                            ? new Color(1f, 0.75f, 0.15f)
+                            : new Color(0.20f, 0.28f, 0.36f);
+                        var label = (_selectedTapTargetId == target.InstanceId ? "✓ " : "") +
+                                    target.Definition.Name;
+                        if (GUI.Button(new Rect(i * (buttonWidth + 10f), 0f,
+                                buttonWidth, buttonHeight), label))
+                            _selectedTapTargetId = target.InstanceId;
+                    }
+                    GUI.EndScrollView();
+                    noteTop += 102f;
+                }
+                GUI.enabled = canUseControls &&
+                              (tapTargets.Count == 0 || _selectedTapTargetId != 0);
+                GUI.backgroundColor = new Color(0.30f, 0.58f, 0.36f);
+                if (GUI.Button(new Rect(area.x + 10f, noteTop,
+                        area.width - 20f, 46f), "Use Tap Ability — Instead of Attacking"))
+                {
+                    var result = _engine.UseTapAbility(_state, HumanId,
+                        attacker.InstanceId, _selectedTapTargetId);
+                    ShowResult(result, result.Success
+                        ? $"Used {attacker.Definition.Name}'s tap ability." : null);
+                    if (result.Success)
+                    {
+                        CloseHandCardViewer();
+                        return;
+                    }
+                    _viewerMessage = result.Error;
+                }
+                GUI.enabled = true;
+                noteTop += 54f;
+            }
+
             var readyBlockers = EligibleBlockers(_state.Players[ComputerId]).Count();
             var note = readyBlockers > 0
                 ? $"Opponent has {readyBlockers} ready Blocker(s); the opponent chooses which one intercepts."
                 : legalTargets.Count == 0 && !canAttackPlayer
                     ? "This creature currently has no legal attack."
                     : "Turned opposing creatures appear here as direct attack targets.";
-            GUI.Label(new Rect(area.x + 10f, area.y + 108f, area.width - 20f, 44f), note, bodyStyle);
+            GUI.Label(new Rect(area.x + 10f, noteTop, area.width - 20f, 44f), note, bodyStyle);
         }
 
         private void BeginManaPayment()
