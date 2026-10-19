@@ -186,7 +186,9 @@ namespace CardGame.Core
                 var hiddenHand = state.Players.Any(p => p.PlayerId != playerId && p.Hand.Contains(card));
                 var inspected = state.InspectionPlayerId == playerId && state.InspectedCards.Contains(card);
                 if (!card.FaceUp && !inspected && (shield || hiddenHand))
-                    return (shield ? "Face-down shield " : "Face-down hand card ") + (index + 1);
+                    return (state.Players[playerId].Shields.Contains(card) || state.Players[playerId].Hand.Contains(card)
+                        ? "You — " : "Opponent — ") +
+                        (shield ? "Face-down shield " : "Face-down hand card ") + (index + 1);
                 var location = string.Empty;
                 foreach (var player in state.Players)
                 {
