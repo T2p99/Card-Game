@@ -38,6 +38,17 @@ namespace CardGame.Core.Tests
             state.Players[0].BattleZone.Add(Card(20, Creature("own target")));
             state.Players[0].Graveyard.Add(Card(21, Creature("graveyard target")));
             state.Players[1].BattleZone.Add(Card(22, Creature("opponent target")));
+            if (definition.Type == CardType.EvolutionCreature)
+            {
+                var requirements = definition.EvolutionRequirements;
+                for (var i = 0; i < requirements.Length; i++)
+                {
+                    var baseDefinition = Creature("evolution base " + i);
+                    baseDefinition.Races = requirements[i].Races.Length > 0 ? requirements[i].Races : new[] { requirements[i].RaceContains };
+                    if (baseDefinition.Races.Contains("Survivor")) baseDefinition.Abilities = new[] { new KeywordAbility(CardKeyword.Survivor) };
+                    state.Players[0].BattleZone.Add(Card(30 + i, baseDefinition));
+                }
+            }
             for (var i = 0; i < 20; i++)
                 state.Players[0].Mana.Add(Card(100 + i, Creature("mana", (Civilization)(i % 5))));
             var engine = new RulesEngine();
@@ -316,6 +327,90 @@ namespace CardGame.Core.Tests
             session.AnswerValue(untap ? 0 : 1);
             Assert.That(session.IsComplete, Is.True);
             Assert.That(session.State.Players[0].BattleZone[0].Tapped, Is.EqualTo(!untap));
+        }
+
+        [Test]
+        public void IdenticalNamedTargets_ShowTheirControllerAndZone()
+        {
+            var state = State();
+            var definition = Creature("spell"); definition.Type = CardType.Spell;
+            definition.RuleAbilities = new[] { new RuleAbilityDefinition("target", AbilityTiming.OnCast, AbilityOperation.Destroy) {
+                Selector = new RuleSelectorDefinition { Controller = RuleController.Either } } };
+            state.Players[0].Hand.Add(Card(10, definition)); state.Players[0].Mana.Add(Card(11, Creature("mana")));
+            state.Players[0].BattleZone.Add(Card(20, Creature("same name")));
+            state.Players[1].BattleZone.Add(Card(21, Creature("same name")));
+            var session = new AbilityActionSession(state, 0, (e, s) => e.CastSpell(s, 0, 10, new long[] { 11 }));
+            Assert.That(session.PendingChoice.CardLabels[0], Does.StartWith("You — Battle zone"));
+            Assert.That(session.PendingChoice.CardLabels[1], Does.StartWith("Opponent — Battle zone"));
+        }
+
+        [Test]
+        public void DecliningRemainingShieldTriggers_OnlyDeclinesThatPlayersCards()
+        {
+            var state = State();
+            var own = Card(10, Creature("own trigger")); var other = Card(11, Creature("other trigger"));
+            own.BrokenByAttackerInstanceId = 20; other.BrokenByAttackerInstanceId = 21;
+            state.Players[0].Hand.Add(own); state.Players[1].Hand.Add(other);
+            state.PendingShieldTriggers.AddRange(new[] { own, other });
+            Assert.That(new RulesEngine().ResolvePendingShieldTriggers(state, 0).Success, Is.True);
+            Assert.That(state.PendingShieldTriggers, Is.EqualTo(new[] { other }));
+            Assert.That(other.BrokenByAttackerInstanceId, Is.EqualTo(21));
+            Assert.That(own.BrokenByAttackerInstanceId, Is.Zero);
+        }
+
+        [Test]
+        public void EvolutionShieldTrigger_AsksForBaseAndPlaysForZeroMana()
+        {
+            var state = State(); state.ActivePlayerId = 1;
+            var trigger = Card(10, TcgCatalog.ByName("Q-tronic Omnistrain").Single());
+            var survivor = Creature("survivor"); survivor.Abilities = new[] { new KeywordAbility(CardKeyword.Survivor) };
+            state.Players[0].BattleZone.AddRange(new[] { Card(20, survivor), Card(21, survivor), Card(22, Creature("wrong base")) });
+            state.Players[0].Hand.Add(trigger); state.PendingShieldTriggers.Add(trigger);
+            var session = new AbilityActionSession(state, 0, (e, s) => e.CastShieldTriggerWithChoices(s, 0, 10));
+            Assert.That(session.PendingChoice.Cards.Select(c => c.InstanceId), Is.EquivalentTo(new long[] { 20, 21 }));
+            session.AnswerCards(new long[] { 21 });
+            Assert.That(session.Result.Success, Is.True);
+            var evolved = session.State.Players[0].BattleZone.Single(c => c.InstanceId == 10);
+            Assert.That(evolved.EvolutionMaterials.Single().InstanceId, Is.EqualTo(21));
+            Assert.That(session.State.PendingShieldTriggers, Is.Empty);
+            Assert.That(session.State.Players[0].Mana, Is.Empty);
+            Assert.That(state.PendingShieldTriggers.Single(), Is.SameAs(trigger));
+        }
+
+        public static IEnumerable<CardDefinition> ShieldTriggers => Catalog.Where(c => c.HasKeyword(CardKeyword.ShieldTrigger));
+        [TestCaseSource(nameof(ShieldTriggers))]
+        public void EveryShieldTrigger_ReplaysHumanChoicesWithoutMana(CardDefinition definition)
+        {
+            var state = State(); state.ActivePlayerId = 1;
+            var card = Card(10, definition); state.Players[0].Hand.Add(card); state.PendingShieldTriggers.Add(card);
+            var survivor = Creature("survivor"); survivor.Abilities = new[] { new KeywordAbility(CardKeyword.Survivor) };
+            state.Players[0].BattleZone.AddRange(new[] { Card(20, survivor), Card(21, survivor) });
+            state.Players[1].BattleZone.Add(Card(22, Creature("opponent")));
+            var expectedState = GameStateSnapshot.Copy(state);
+            var expected = new RulesEngine().CastShieldTriggerWithChoices(expectedState, 0, 10);
+            var session = new AbilityActionSession(state, 0, (e, s) => e.CastShieldTriggerWithChoices(s, 0, 10));
+            var steps = 0;
+            while (!session.IsComplete)
+            {
+                Assert.That(++steps, Is.LessThan(100), definition.Name);
+                var choice = session.PendingChoice;
+                if (choice.Kind == AbilityChoiceKind.Cards)
+                {
+                    var selected = choice.Cards.OrderBy(c => c.InstanceId).Take(choice.Maximum).ToArray();
+                    if (choice.MaximumCombinedPower > 0)
+                    {
+                        var power = 0;
+                        selected = selected.Where(c => { var index = choice.Cards.ToList().IndexOf(c);
+                            if (power + choice.CardPowers[index] > choice.MaximumCombinedPower) return false;
+                            power += choice.CardPowers[index]; return true; }).ToArray();
+                    }
+                    Assert.That(session.AnswerCards(selected.Select(c => c.InstanceId)), Is.True);
+                }
+                else Assert.That(session.AnswerValue(choice.Kind == AbilityChoiceKind.Number ? choice.Suggested : 0), Is.True);
+            }
+            Assert.That(session.Result.Success, Is.EqualTo(expected.Success), definition.Name);
+            Assert.That(Fingerprint(session.State), Is.EqualTo(Fingerprint(expected.Success ? expectedState : state)), definition.Name);
+            Assert.That(state.PendingShieldTriggers.Single(), Is.SameAs(card));
         }
 
         private static string Fingerprint(GameState state) =>
