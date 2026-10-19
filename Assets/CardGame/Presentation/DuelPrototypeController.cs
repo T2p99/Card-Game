@@ -624,7 +624,7 @@ namespace CardGame.Presentation
 
             DrawZoneCaption(new Rect(shieldsX, area.y + 25f, shieldLaneWidth, 20f),
                 $"SHIELDS ({player.Shields.Count})");
-            DrawShieldRow(player.Shields.Count,
+            DrawShieldRow(player.Shields,
                 new Rect(shieldsX, contentTop, shieldLaneWidth, utilityCardHeight), utilityCardWidth);
 
             DrawZoneCaption(new Rect(graveyardX, area.y + 25f, 92f, 20f),
@@ -662,8 +662,9 @@ namespace CardGame.Presentation
             DrawCardBack(rect, count.ToString());
         }
 
-        private void DrawShieldRow(int shieldCount, Rect lane, float cardWidth)
+        private void DrawShieldRow(IReadOnlyList<CardInstance> shields, Rect lane, float cardWidth)
         {
+            var shieldCount = shields.Count;
             if (shieldCount == 0)
             {
                 GUI.backgroundColor = new Color(0.07f, 0.08f, 0.10f);
@@ -675,7 +676,14 @@ namespace CardGame.Presentation
                 ? 0f
                 : Mathf.Min(cardWidth + 6f, (lane.width - cardWidth) / (shieldCount - 1));
             for (var i = 0; i < shieldCount; i++)
-                DrawCardBack(new Rect(lane.x + i * stride, lane.y, cardWidth, lane.height), string.Empty);
+            {
+                var card = shields[i];
+                var rect = new Rect(lane.x + i * stride, lane.y, cardWidth, lane.height);
+                if (card.FaceUp)
+                    DrawCardButton(card, rect, false, false, () => OpenFaceUpCardViewer(card,
+                        shields.Where(shield => shield.FaceUp).ToArray(), "Face-up shields"));
+                else DrawCardBack(rect, string.Empty);
+            }
         }
 
         private void DrawGraveyard(PlayerState player, Rect rect)
@@ -1706,6 +1714,11 @@ namespace CardGame.Presentation
             var keywords = _engine.GetEffectiveKeywords(_state, card);
             var text = "Current keywords: " + (keywords.Count == 0 ? "None" :
                 string.Join(", ", keywords.Select(k => FriendlyTiming(k.ToString()))));
+            var races = card.Definition.Races.Concat(card.TemporaryRaces);
+            if (keywords.Contains(CardKeyword.Survivor)) races = races.Concat(new[] { "Survivor" });
+            if (card.Definition.IsCreature) text += "\nCurrent races: " + string.Join(", ", races.Distinct(StringComparer.OrdinalIgnoreCase));
+            if (!string.IsNullOrWhiteSpace(card.ChosenRace)) text += "\nChosen race: " + card.ChosenRace;
+            if (card.HasChosenCivilization) text += "\nChosen civilization: " + card.ChosenCivilization;
             foreach (var preview in _engine.GetAbilityPreviews(_state, card))
             {
                 var rule = preview.Ability;
