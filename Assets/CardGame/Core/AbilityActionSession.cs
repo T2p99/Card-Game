@@ -187,7 +187,15 @@ namespace CardGame.Core
                 var inspected = state.InspectionPlayerId == playerId && state.InspectedCards.Contains(card);
                 if (!card.FaceUp && !inspected && (shield || hiddenHand))
                     return (shield ? "Face-down shield " : "Face-down hand card ") + (index + 1);
-                return card.Definition.Name + (card.Tapped ? " (tapped)" : "") +
+                var location = string.Empty;
+                foreach (var player in state.Players)
+                {
+                    var zones = new[] { player.BattleZone, player.Hand, player.Mana, player.Graveyard, player.Deck, player.Shields, player.Resolving };
+                    var names = new[] { "Battle zone", "Hand", "Mana", "Graveyard", "Deck", "Shields", "Resolving" };
+                    var zone = Array.FindIndex(zones, cards => cards.Contains(card));
+                    if (zone >= 0) { location = (player.PlayerId == playerId ? "You" : "Opponent") + " — " + names[zone] + "\n"; break; }
+                }
+                return location + card.Definition.Name + (card.Tapped ? " (tapped)" : "") +
                     (card.Definition.IsCreature ? " · Power " + new AbilityResolver().CurrentPower(state, card) : string.Empty) +
                     "\n" + card.Definition.RulesText;
             }

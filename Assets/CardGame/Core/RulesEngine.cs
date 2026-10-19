@@ -458,6 +458,23 @@ namespace CardGame.Core
             return RuleResult.Ok();
         }
 
+        public RuleResult CastShieldTriggerWithChoices(GameState state, int playerId,
+            long cardId, long preferredTarget = 0)
+        {
+            if (state == null || playerId < 0 || playerId >= state.Players.Length)
+                return RuleResult.Fail("Unknown player or match.");
+            var card = Find(state.PendingShieldTriggers, cardId);
+            if (card == null || !state.Players[playerId].Hand.Contains(card))
+                return RuleResult.Fail("The selected card is not a pending shield trigger.");
+            if (card.Definition.Type == CardType.EvolutionCreature && preferredTarget == 0)
+            {
+                var candidates = GetEvolutionBaseCandidates(state, playerId, cardId);
+                if (candidates.Count == 0) return RuleResult.Fail("No legal evolution base is available for this shield trigger.");
+                preferredTarget = _abilities.ChooseEvolutionBase(state, playerId, card, candidates, 0).InstanceId;
+            }
+            return CastShieldTrigger(state, playerId, cardId, preferredTarget);
+        }
+
         public RuleResult CastShieldTrigger(
             GameState state,
             int defendingPlayerId,
@@ -1131,9 +1148,12 @@ namespace CardGame.Core
                 return RuleResult.Fail("Unknown player.");
             // Card-specific effects are resolved by the effect layer. Retaining candidates
             // here prevents presentation from silently skipping the shield-trigger window.
-            foreach (var card in state.PendingShieldTriggers)
+            foreach (var card in state.PendingShieldTriggers
+                .Where(card => state.Players[defendingPlayerId].Hand.Contains(card)).ToArray())
+            {
                 card.BrokenByAttackerInstanceId = 0;
-            state.PendingShieldTriggers.Clear();
+                state.PendingShieldTriggers.Remove(card);
+            }
             return RuleResult.Ok();
         }
 
