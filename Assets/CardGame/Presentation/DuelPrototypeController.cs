@@ -1637,7 +1637,7 @@ namespace CardGame.Presentation
 
         private void CastHumanShieldTrigger(CardInstance trigger, long preferredTarget = 0)
         {
-            QueueAction((engine, state) => engine.CastShieldTrigger(state, HumanId,
+            QueueAction((engine, state) => engine.CastShieldTriggerWithChoices(state, HumanId,
                 trigger.InstanceId, preferredTarget), result => ShowResult(result,
                     result.Success ? $"Played {trigger.Definition.Name} for 0 mana." : null));
         }
@@ -1654,7 +1654,7 @@ namespace CardGame.Presentation
                     if (trigger == null) break;
                     var id = trigger.InstanceId;
                     var succeeded = false;
-                    yield return RunAction((engine, state) => engine.CastShieldTrigger(state, ComputerId, id),
+                    yield return RunAction((engine, state) => engine.CastShieldTriggerWithChoices(state, ComputerId, id),
                         result => succeeded = result.Success);
                     if (!succeeded)
                         yield return RunAction((engine, state) => engine.DeclineShieldTrigger(state, ComputerId, id));
