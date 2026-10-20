@@ -3,6 +3,7 @@ using UnityEngine.UI;
 
 namespace CardGame.Presentation
 {
+    [RequireComponent(typeof(CanvasRenderer))]
     public sealed class PortraitShieldGraphic : MaskableGraphic
     {
         protected override void OnPopulateMesh(VertexHelper mesh)

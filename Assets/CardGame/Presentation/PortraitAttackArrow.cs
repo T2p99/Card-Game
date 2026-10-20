@@ -3,6 +3,7 @@ using UnityEngine.UI;
 
 namespace CardGame.Presentation
 {
+    [RequireComponent(typeof(CanvasRenderer))]
     public sealed class PortraitAttackArrow : MaskableGraphic
     {
         public Vector2 From, To;

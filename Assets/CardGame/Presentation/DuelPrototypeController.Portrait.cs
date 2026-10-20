@@ -45,7 +45,7 @@ namespace CardGame.Presentation
         private AbilityChoice _portraitChoice;
         private readonly List<long> _portraitChoiceIds = new List<long>();
         private int _portraitNumber;
-        private float _portraitChoiceOffset = 1f, _portraitManaOffset = 1f;
+        private float _portraitChoiceOffset = 1f, _portraitManaOffset = 1f, _portraitSetupOffset = 1f;
         private Text _portraitStatus;
         private readonly List<PortraitArt> _portraitArt = new List<PortraitArt>();
         private Rect _portraitLastSafe;
@@ -789,8 +789,7 @@ namespace CardGame.Presentation
         {
             PLabel(_portraitBoard, new Rect(20, 30, _pw - 40, 58), "DUEL MASTERS", 38, PGold);
             PLabel(_portraitBoard, new Rect(28, 92, _pw - 56, 60), "Choose card pools for this duel. Each deck contains 40 cards.", 21, Color.white);
-            var contentHeight = 1360f;
-            var scroll = PScroll(_portraitBoard, new Rect(20, 166, _pw - 40, _ph - 332), false, contentHeight);
+            var scroll = PScroll(_portraitBoard, new Rect(20, 166, _pw - 40, _ph - 346), false, 1360f);
             var y = 0f;
             foreach (var owner in new[] { HumanId, ComputerId })
             {
@@ -815,8 +814,16 @@ namespace CardGame.Presentation
                 }
                 y += 174;
             }
-            PLabel(_portraitBoard, new Rect(28, _ph - 156, _pw - 56, 62), _setupMessage, 18, new Color(.72f, .83f, .86f));
-            PButton(_portraitBoard, new Rect(28, _ph - 82, _pw - 56, 60), "START DUEL", () => { PClosePreview(); StartSelectedMatch(); _portraitDirty = true; }, true, PGold);
+            scroll.content.sizeDelta = new Vector2(scroll.content.sizeDelta.x, Mathf.Max(scroll.viewport.rect.height, y + 12));
+            // Selections rebuild this view. Restore its position after sizing the
+            // content, and retain subsequent scrolling for the next rebuild.
+            scroll.verticalNormalizedPosition = _portraitSetupOffset;
+            scroll.onValueChanged.AddListener(v => _portraitSetupOffset = v.y);
+
+            // Keep the action outside the scrolling content and inside the safe area.
+            var footer = PBox(_portraitBoard, "Deck setup footer", new Rect(8, _ph - 164, _pw - 16, 156), PPanel).rectTransform;
+            PLabel(footer, new Rect(20, 8, _pw - 56, 62), _setupMessage, 18, new Color(.72f, .83f, .86f));
+            PButton(footer, new Rect(20, 82, _pw - 56, 60), "START DUEL", () => { PClosePreview(); StartSelectedMatch(); _portraitDirty = true; }, true, PGold);
         }
 
         private void PMenu()
