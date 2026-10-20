@@ -1433,7 +1433,8 @@ namespace CardGame.Core
         }
 
         public IReadOnlyList<CardInstance> ChooseShieldsToBreak(GameState state,
-            CardInstance attacker, int defendingPlayerId, int count)
+            CardInstance attacker, int defendingPlayerId, int count,
+            long preferredShieldInstanceId = 0, int preferredShieldVersion = -1)
         {
             if (state == null || attacker == null || defendingPlayerId < 0 ||
                 defendingPlayerId >= state.Players.Length || count <= 0)
@@ -1443,13 +1444,19 @@ namespace CardGame.Core
             var defender = state.Players[defendingPlayerId];
             var candidates = defender.Shields.ToArray();
             var requested = Math.Min(count, candidates.Length);
-            var chooserId = attackerId;
-            if (defender.BattleZone.Any(source => RulesOf(state, source).Any(ability =>
-                    ability.Timing == AbilityTiming.Static &&
-                    ability.Operation == AbilityOperation.DefendingPlayerChoosesShield &&
-                    ConditionMatches(state, source, ability.Condition))) ||
-                ShieldOwnerChooses(state, chooserId, defendingPlayerId))
-                chooserId = defendingPlayerId;
+            var chooserId = AttackerChoosesShields(state, attacker, defendingPlayerId)
+                ? attackerId : defendingPlayerId;
+            // A drag onto a shield supplies the attacker's first choice, never
+            // overrides a defender-choice effect, and cannot follow a shield
+            // that left and re-entered the zone during attack triggers.
+            var preferred = chooserId == attackerId ? candidates.FirstOrDefault(card =>
+                card.InstanceId == preferredShieldInstanceId &&
+                card.ZoneChangeVersion == preferredShieldVersion) : null;
+            if (preferred != null)
+            {
+                candidates = candidates.Where(card => card != preferred).ToArray();
+                requested--;
+            }
             var choiceAbility = new RuleAbilityDefinition("rules.choose_shields_to_break",
                 AbilityTiming.Static, AbilityOperation.BreakShield)
             {
@@ -1462,8 +1469,23 @@ namespace CardGame.Core
                     Maximum = requested
                 }
             };
-            return ChooseCardsSafely(state, chooserId, attacker, choiceAbility,
-                candidates, requested, requested);
+            var chosen = requested == 0 ? Array.Empty<CardInstance>() :
+                ChooseCardsSafely(state, chooserId, attacker, choiceAbility,
+                    candidates, requested, requested);
+            return preferred == null ? chosen : new[] { preferred }.Concat(chosen).ToArray();
+        }
+
+        public bool AttackerChoosesShields(GameState state, CardInstance attacker, int defendingPlayerId)
+        {
+            if (state == null || attacker == null || defendingPlayerId < 0 || defendingPlayerId >= state.Players.Length)
+                return false;
+            var attackerId = FindOwnerId(state, attacker);
+            if (attackerId < 0 || attackerId == defendingPlayerId) return false;
+            return !state.Players[defendingPlayerId].BattleZone.Any(source => RulesOf(state, source).Any(ability =>
+                       ability.Timing == AbilityTiming.Static &&
+                       ability.Operation == AbilityOperation.DefendingPlayerChoosesShield &&
+                       ConditionMatches(state, source, ability.Condition))) &&
+                   !ShieldOwnerChooses(state, attackerId, defendingPlayerId);
         }
 
         private bool ShieldOwnerChooses(GameState state, int chooserId, int shieldOwnerId)

@@ -166,6 +166,8 @@ namespace CardGame.Core
         public long TargetCreatureInstanceId;
         public int TargetCreatureZoneChangeVersion = -1;
         public int DefendingPlayerId;
+        public long PreferredShieldInstanceId;
+        public int PreferredShieldZoneChangeVersion = -1;
     }
 
     [Serializable]

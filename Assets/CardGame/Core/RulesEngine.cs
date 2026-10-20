@@ -643,6 +643,9 @@ namespace CardGame.Core
             creature.EnteredBattleZoneOnTurn == state.TurnNumber &&
             !_abilities.HasKeyword(state, creature, CardKeyword.SpeedAttacker);
 
+        public bool AttackerChoosesShields(GameState state, CardInstance attacker, int defendingPlayerId) =>
+            _abilities.AttackerChoosesShields(state, attacker, defendingPlayerId);
+
         public RuleResult ValidateAttack(
             GameState state,
             int playerId,
@@ -723,11 +726,19 @@ namespace CardGame.Core
             int playerId,
             long attackerInstanceId,
             AttackTargetKind targetKind,
-            long targetCreatureInstanceId = 0)
+            long targetCreatureInstanceId = 0,
+            long preferredShieldInstanceId = 0)
         {
             var check = ValidateAttack(state, playerId, attackerInstanceId,
                 targetKind, targetCreatureInstanceId);
             if (!check.Success) return check;
+            CardInstance preferredShield = null;
+            if (preferredShieldInstanceId != 0)
+            {
+                preferredShield = Find(state.Opponent.Shields, preferredShieldInstanceId);
+                if (targetKind != AttackTargetKind.Player || preferredShield == null)
+                    return RuleResult.Fail("Choose one of the opponent's current shields.");
+            }
             var attacker = Find(state.ActivePlayer.BattleZone, attackerInstanceId);
             state.Phase = GamePhase.Attack;
             state.RequiredBlockerInstanceId = 0;
@@ -747,7 +758,9 @@ namespace CardGame.Core
                 TargetKind = targetKind,
                 TargetCreatureInstanceId = targetCreatureInstanceId,
                 TargetCreatureZoneChangeVersion = attackedCreature?.ZoneChangeVersion ?? -1,
-                DefendingPlayerId = state.Opponent.PlayerId
+                DefendingPlayerId = state.Opponent.PlayerId,
+                PreferredShieldInstanceId = preferredShieldInstanceId,
+                PreferredShieldZoneChangeVersion = preferredShield?.ZoneChangeVersion ?? -1
             };
             attacker.AttackedThisTurn = true;
             ResolveAttackAbilities(state, playerId, attacker);
@@ -968,7 +981,8 @@ namespace CardGame.Core
                 if (attacker != null)
                     _abilities.ResolveUnblockedPlayerAttack(state, attacker);
                 ResolvePlayerAttack(state, attack.AttackerInstanceId,
-                    attack.AttackerZoneChangeVersion, defendingPlayerId);
+                    attack.AttackerZoneChangeVersion, defendingPlayerId,
+                    attack.PreferredShieldInstanceId, attack.PreferredShieldZoneChangeVersion);
             }
 
             if (state.IsFinished)
@@ -1275,6 +1289,45 @@ namespace CardGame.Core
                     "Each civilization on a multicolored card requires a different selected mana card.");
 
             return RuleResult.Ok();
+        }
+
+        /// <summary>Finds a legal minimum-cost payment without tapping mana.
+        /// Backtracking is necessary when a multicolored mana card is the only
+        /// provider of a later required civilization.</summary>
+        public IReadOnlyCollection<long> FindManaPayment(GameState state, int playerId,
+            CardInstance card)
+        {
+            if (state == null || card == null || playerId < 0 || playerId >= state.Players.Length)
+                return Array.Empty<long>();
+            var cost = MinimumManaCost(state, card);
+            var available = state.Players[playerId].Mana.Where(mana => !mana.Tapped)
+                .OrderBy(mana => mana.Definition.Civilizations.Length).ThenBy(mana => mana.InstanceId).ToArray();
+            if (available.Length < cost) return Array.Empty<long>();
+            var chosen = new List<CardInstance>();
+            if (!ChooseCivilizationPayment(available, card.Definition.Civilizations.Distinct().ToArray(),
+                    0, chosen)) return Array.Empty<long>();
+            chosen.AddRange(available.Where(mana => !chosen.Contains(mana)).Take(cost - chosen.Count));
+            var ids = chosen.Select(mana => mana.InstanceId).ToArray();
+            return ValidateManaPayment(state, state.Players[playerId], card, ids).Success
+                ? ids : Array.Empty<long>();
+        }
+
+        public RuleResult ValidatePayment(GameState state, int playerId,
+            CardInstance card, IReadOnlyCollection<long> manaIds) =>
+            ValidateManaPayment(state, state.Players[playerId], card, manaIds);
+
+        private static bool ChooseCivilizationPayment(IReadOnlyList<CardInstance> available,
+            IReadOnlyList<Civilization> civilizations, int index, List<CardInstance> chosen)
+        {
+            if (index == civilizations.Count) return true;
+            foreach (var mana in available)
+            {
+                if (chosen.Contains(mana) || !mana.Definition.Civilizations.Contains(civilizations[index])) continue;
+                chosen.Add(mana);
+                if (ChooseCivilizationPayment(available, civilizations, index + 1, chosen)) return true;
+                chosen.RemoveAt(chosen.Count - 1);
+            }
+            return false;
         }
 
         private static bool CanAssignCivilizationMana(
@@ -1712,7 +1765,8 @@ namespace CardGame.Core
         }
 
         private void ResolvePlayerAttack(GameState state, long attackerId,
-            int attackerZoneChangeVersion, int defendingPlayerId)
+            int attackerZoneChangeVersion, int defendingPlayerId,
+            long preferredShieldInstanceId = 0, int preferredShieldVersion = -1)
         {
             var attacker = Find(state.ActivePlayer.BattleZone, attackerId);
             var defender = state.Players[defendingPlayerId];
@@ -1727,15 +1781,17 @@ namespace CardGame.Core
 
             var breakerCount = BreakerCount(state, state.ActivePlayer, attacker);
             if (attacker.TemporaryDoubleBreaker) breakerCount = Math.Max(2, breakerCount);
-            ResolveShieldBreaks(state, attacker, defender, breakerCount);
+            ResolveShieldBreaks(state, attacker, defender, breakerCount,
+                preferredShieldInstanceId, preferredShieldVersion);
         }
 
         private void ResolveShieldBreaks(GameState state, CardInstance attacker,
-            PlayerState defender, int requestedCount)
+            PlayerState defender, int requestedCount,
+            long preferredShieldInstanceId = 0, int preferredShieldVersion = -1)
         {
             var shieldsToBreak = Math.Min(requestedCount, defender.Shields.Count);
             var selectedShields = _abilities.ChooseShieldsToBreak(state, attacker,
-                defender.PlayerId, shieldsToBreak);
+                defender.PlayerId, shieldsToBreak, preferredShieldInstanceId, preferredShieldVersion);
             foreach (var selectedShield in selectedShields)
             {
                 if (state.IsFinished) break;
