@@ -40,6 +40,7 @@ namespace CardGame.Presentation
         private string _portraitModal;
         private bool _portraitManualMana, _portraitRules;
         private float _portraitRowOffset, _portraitOpponentRowOffset, _portraitHandOffset;
+        private float _portraitManaRowOffset, _portraitOpponentManaRowOffset;
         private long _portraitPaymentCard;
         private readonly HashSet<long> _portraitManaIds = new HashSet<long>();
         private AbilityChoice _portraitChoice;
@@ -187,46 +188,36 @@ namespace CardGame.Presentation
             PBox(_portraitBoard, "Your table", new Rect(6, split + 6, _pw - 12, _ph - split - 76), new Color(.075f, .16f, .175f));
             PBox(_portraitBoard, "Battle line", new Rect(26, split, _pw - 52, 2), new Color(.65f, .52f, .28f, .7f));
             PLabel(_portraitBoard, new Rect(24, 8, 190, 44), "DUEL MASTERS", 24, PGold, TextAnchor.MiddleLeft);
-            PLabel(_portraitBoard, new Rect(220, 8, _pw - 340, 44),
+            PLabel(_portraitBoard, new Rect(220, 8, _pw - 484, 44),
                 "TURN " + _state.TurnNumber + (_state.ActivePlayerId == HumanId ? "  ·  YOUR TURN" : "  ·  OPPONENT"),
                 19, Color.white);
             PButton(_portraitBoard, new Rect(_pw - 94, 10, 74, 44), "☰", () => { _portraitModal = "menu"; _portraitDirty = true; });
             PDrawSide(_state.Players[ComputerId], 64, field * .40f, true);
             PDrawSide(_state.Players[HumanId], split + 6, field * .60f - 6, false);
             var canEnd = PCanAct && _state.PendingShieldTriggers.Count == 0;
-            PButton(_portraitBoard, new Rect(_pw - 150, split - 36, 132, 72), "END TURN", () => EndHumanTurn(), canEnd, PGold);
-            _portraitStatus = PLabel(_portraitBoard, new Rect(20, _ph - 64, _pw - 40, 56), _message, 18,
+            PButton(_portraitBoard, new Rect(_pw - 256, 8, 152, 44), "END TURN", () => EndHumanTurn(), canEnd, PGold);
+            _portraitStatus = PLabel(_portraitBoard, new Rect(20, _ph - 64, _pw - 40, 56), _message, 21,
                 new Color(.75f, .85f, .88f));
         }
 
         private void PDrawSide(PlayerState player, float y, float height, bool opponent)
         {
             var battleY = opponent ? y + height - 166 : y + 24;
-            var manaY = opponent ? y + height * .47f : y + height * .34f;
-            var shieldsY = opponent ? y + height * .25f : y + height * .51f;
-            var handY = opponent ? y + 16 : y + height * .74f;
+            var manaY = opponent ? y + height * .42f : y + height * .31f;
+            var shieldsY = opponent ? y + height * .25f : y + height * .52f;
+            var handY = opponent ? y + 12 : y + height * .74f;
             PAvatar(player, new Rect(opponent ? 18 : _pw - 104, handY + (opponent ? 2 : 44), 86, 86), opponent);
             if (opponent)
             {
                 var count = Math.Min(player.Hand.Count, 9);
                 for (var i = 0; i < count; i++)
-                    PCard(_portraitBoard, null, new Rect(_pw * .5f - count * 14 + i * 28, handY, 60, 84), true);
-                PLabel(_portraitBoard, new Rect(122, handY + 86, _pw - 244, 26), "OPPONENT HAND · " + player.Hand.Count, 15, new Color(.62f, .73f, .78f));
+                    PCard(_portraitBoard, null, new Rect(_pw * .5f - count * 14 + i * 28, handY, 52, 72), true);
+                PLabel(_portraitBoard, new Rect(122, handY + 74, _pw - 244, 28), "OPPONENT HAND · " + player.Hand.Count, 20, new Color(.62f, .73f, .78f));
             }
             else PHand(player.Hand, new Rect(12, handY, _pw - 126, Mathf.Max(130, height * .25f)));
-            PShieldRow(player, new Rect(120, shieldsY, _pw - 240, opponent ? 76 : 92), opponent);
-            PButton(_portraitBoard, new Rect(122, manaY, _pw - 244, 68),
-                "↧  MANA   " + player.Mana.Count(c => !c.Tapped) + " / " + player.Mana.Count,
-                () => POpenZone(player.Mana, opponent ? "Opponent mana" : "Your mana"), true, new Color(.14f, .30f, .32f));
-            // An inverted face-up card edge makes the compact mana stack distinct
-            // from the deck while leaving room for five readable shields.
-            if (player.Mana.Count > 0)
-            {
-                var manaArt = PCard(_portraitBoard, player.Mana.Last(), new Rect(86, manaY + 4, 28, 40));
-                manaArt.localRotation = Quaternion.Euler(0, 0, 180);
-            }
-            PLabel(_portraitBoard, new Rect(120, battleY - 20, _pw - 240, 22), opponent ? "OPPONENT BATTLE ZONE" : "YOUR BATTLE ZONE", 14, new Color(.64f, .76f, .77f));
-            PZoneStack(player.Graveyard, new Rect(14, battleY + 28, 76, 104), "GRAVE", false,
+            PShieldRow(player, new Rect(120, shieldsY, _pw - 240, opponent ? 64 : 92), opponent);
+            PManaRow(player, new Rect(110, manaY, _pw - 220, opponent ? 94 : 122), opponent);
+            PZoneStack(player.Graveyard, new Rect(14, battleY + 28, 76, 104), "Graveyard", false,
                 () => POpenZone(player.Graveyard, opponent ? "Opponent graveyard" : "Your graveyard"));
             PZoneStack(player.Deck, new Rect(_pw - 90, battleY + 28, 76, 104), "DECK", true,
                 () => { _message = (opponent ? "Opponent" : "Your") + " deck: " + player.Deck.Count + " cards."; });
@@ -236,7 +227,7 @@ namespace CardGame.Presentation
         private void PAvatar(PlayerState player, Rect area, bool opponent)
         {
             var image = PBox(_portraitBoard, "Avatar", area, opponent ? new Color(.38f, .17f, .19f) : new Color(.12f, .37f, .39f));
-            image.sprite = _portraitCircle;
+            image.sprite = _portraitCircle; image.type = Image.Type.Simple;
             var rim = image.gameObject.AddComponent<Outline>(); rim.effectColor = opponent ? new Color(.8f, .39f, .34f) : PGold;
             rim.effectDistance = new Vector2(2, 2);
             PLabel(image.transform, new Rect(4, 8, area.width - 8, area.height - 16), opponent ? "RIVAL" : "YOU", 21, Color.white);
@@ -245,11 +236,59 @@ namespace CardGame.Presentation
 
         private void PZoneStack(List<CardInstance> cards, Rect area, string label, bool hidden, Action tap)
         {
-            PBox(_portraitBoard, label + " shadow", new Rect(area.x + 4, area.y - 4, area.width, area.height), new Color(.23f, .29f, .31f));
-            var rect = PCard(_portraitBoard, cards.LastOrDefault(), area, hidden || cards.Count == 0);
-            PLabel(rect, new Rect(0, area.height - 32, area.width, 30), cards.Count.ToString(), 23, Color.white, TextAnchor.MiddleCenter, true);
-            PLabel(_portraitBoard, new Rect(area.x - 6, area.y + area.height + 5, area.width + 12, 22), label, 14, new Color(.65f, .77f, .79f));
-            rect.gameObject.AddComponent<PortraitPointer>().Tap = _ => { tap(); _portraitDirty = true; };
+            var pile = PRect(_portraitBoard, label + " pile", area);
+            if (cards.Count == 0)
+            {
+                PBox(pile, "Empty " + label, new Rect(0, 0, area.width, area.height), new Color(.08f, .15f, .19f));
+                PLabel(pile, new Rect(0, 20, area.width, 40), "EMPTY", 18, new Color(.52f, .65f, .68f));
+            }
+            else
+            {
+                var layers = hidden ? 1 : Math.Min(4, cards.Count);
+                for (var i = 0; i < layers; i++)
+                {
+                    var rect = PCard(pile, cards[cards.Count - layers + i], new Rect(0, 0, area.width, area.height), hidden);
+                    var angle = hidden ? 0 : new[] { -7f, 6f, -4f, 3f }[i];
+                    POrientCard(rect, new Vector2(area.width * .5f + (i % 2 == 0 ? -2 : 2), -area.height * .5f - i), angle);
+                }
+            }
+            PLabel(pile, new Rect(0, area.height - 30, area.width, 30), cards.Count.ToString(), 24, Color.white, TextAnchor.MiddleCenter, true);
+            PLabel(_portraitBoard, new Rect(Mathf.Clamp(area.x - 20, 2, _pw - area.width - 42), area.y + area.height + 8, area.width + 40, 28), label, 20, new Color(.76f, .86f, .88f));
+            pile.gameObject.AddComponent<PortraitPointer>().Tap = _ => { tap(); _portraitDirty = true; };
+        }
+
+        private void PManaRow(PlayerState player, Rect area, bool opponent)
+        {
+            var panel = PBox(_portraitBoard, opponent ? "Opponent mana row" : "Your mana row", area, new Color(.075f, .18f, .20f)).rectTransform;
+            PLabel(panel, new Rect(8, 0, area.width - 16, 26),
+                "MANA · " + player.Mana.Count(c => !c.Tapped) + " / " + player.Mana.Count + " READY", 21, new Color(.76f, .88f, .88f));
+            var cardHeight = opponent ? 60f : 86f;
+            var cardWidth = cardHeight * 491f / 682f;
+            var stride = cardHeight + 14;
+            var viewport = new Rect(6, 28, area.width - 12, area.height - 30);
+            var contentWidth = Mathf.Max(viewport.width, player.Mana.Count * stride);
+            var scroll = PScroll(panel, viewport, true, contentWidth);
+            scroll.horizontalNormalizedPosition = opponent ? _portraitOpponentManaRowOffset : _portraitManaRowOffset;
+            scroll.onValueChanged.AddListener(v => { if (opponent) _portraitOpponentManaRowOffset = v.x; else _portraitManaRowOffset = v.x; });
+            var start = Mathf.Max(0, (viewport.width - player.Mana.Count * stride) * .5f);
+            for (var i = 0; i < player.Mana.Count; i++)
+            {
+                var card = player.Mana[i];
+                var rect = PCard(scroll.content, card, new Rect(0, 0, cardWidth, cardHeight));
+                // Mana is face up and inverted. Tapping adds a quarter turn;
+                // only the card face rotates, so the header stays readable.
+                POrientCard(rect, new Vector2(start + (i + .5f) * stride, -viewport.height * .5f), card.Tapped ? 90 : 180);
+                PAttachCardInput(rect, card, player.Mana, opponent ? "Opponent mana" : "Your mana", false, false, scroll);
+            }
+            if (player.Mana.Count == 0)
+                PLabel(scroll.content, new Rect(0, 0, viewport.width, viewport.height), "NO MANA", 20, new Color(.49f, .65f, .67f));
+        }
+
+        private static void POrientCard(RectTransform rect, Vector2 center, float degrees)
+        {
+            rect.pivot = new Vector2(.5f, .5f);
+            rect.anchoredPosition = center;
+            rect.localRotation = Quaternion.Euler(0, 0, degrees);
         }
 
         private void PShieldRow(PlayerState player, Rect area, bool opponent)
@@ -266,7 +305,7 @@ namespace CardGame.Presentation
                 var graphicRect = PRect(shield.transform, "Luminous shield", new Rect(0, 0, width, area.height - 12));
                 var graphic = graphicRect.gameObject.AddComponent<PortraitShieldGraphic>();
                 graphic.color = new Color(.24f, .80f, 1f, .95f); graphic.raycastTarget = false;
-                PLabel(shield.transform, new Rect(0, 5, width, area.height - 26), card.FaceUp ? "◈" : "◇", 30, new Color(.72f, .96f, 1f));
+                PLabel(shield.transform, new Rect(0, 5, width, area.height - 26), card.FaceUp ? "◈" : "", 30, new Color(.72f, .96f, 1f));
                 if (card.FaceUp)
                 {
                     var index = player.Shields.Where(c => c.FaceUp).ToList().IndexOf(card);
@@ -280,7 +319,8 @@ namespace CardGame.Presentation
         private void PBattleRow(PlayerState player, Rect area, bool opponent)
         {
             if (player.BattleZone.Count == 0) { PLabel(_portraitBoard, area, "BATTLE ZONE", 19, new Color(.31f, .46f, .49f)); return; }
-            const float stride = 108f;
+            const float stride = 142f;
+            const float slotWidth = 132f;
             var contentWidth = Mathf.Max(area.width, player.BattleZone.Count * stride - 10);
             var scroll = PScroll(_portraitBoard, area, true, contentWidth);
             scroll.horizontalNormalizedPosition = opponent ? _portraitOpponentRowOffset : _portraitRowOffset;
@@ -289,12 +329,13 @@ namespace CardGame.Presentation
             for (var i = 0; i < player.BattleZone.Count; i++)
             {
                 var card = player.BattleZone[i];
-                var rect = PCard(scroll.content, card, new Rect(start + i * stride, 28, 96, 126));
-                var badge = PLabel(rect, new Rect(-2, -27, 100, 30),
-                    _engine.CurrentPower(_state, card).ToString(), 25, PGold, TextAnchor.MiddleCenter, true);
-                badge.raycastTarget = false;
+                var slot = PRect(scroll.content, "Battle card slot", new Rect(start + i * stride, 0, slotWidth, area.height));
+                var rect = PCard(slot, card, new Rect(0, 0, 96, 126));
+                POrientCard(rect, new Vector2(slotWidth * .5f, -91), card.Tapped ? -90 : 0);
+                PLabel(slot, new Rect(0, 0, slotWidth, 28), _engine.CurrentPower(_state, card).ToString(),
+                    26, PGold, TextAnchor.MiddleCenter, true);
                 if (_engine.CurrentPower(_state, card, true) != _engine.CurrentPower(_state, card))
-                    PLabel(rect, new Rect(0, 103, 96, 23), "ATK " + _engine.CurrentPower(_state, card, true), 16, PGold, TextAnchor.MiddleCenter, true);
+                    PLabel(slot, new Rect(0, 132, slotWidth, 24), "ATK " + _engine.CurrentPower(_state, card, true), 18, PGold, TextAnchor.MiddleCenter, true);
                 if (opponent) _portraitTargets.Add(new PortraitTarget { Rect = rect, Border = rect.GetComponent<Image>(), Id = card.InstanceId, Kind = "creature" });
                 PAttachCardInput(rect, card, player.BattleZone, opponent ? "Opponent battle zone" : "Your battle zone", false, !opponent, scroll);
             }
@@ -317,7 +358,7 @@ namespace CardGame.Presentation
                 _portraitHandCards[card.InstanceId] = rect;
                 PAttachCardInput(rect, card, cards, "Your hand", true, false, scroll);
             }
-            PLabel(_portraitBoard, new Rect(area.x, area.y - 12, area.width, 23), "HAND · " + cards.Count + "   TAP TO VIEW · HOLD TO BROWSE", 14, new Color(.59f, .75f, .78f));
+            PLabel(_portraitBoard, new Rect(area.x, area.y - 12, area.width, 28), "HAND · " + cards.Count + "   TAP TO VIEW · HOLD TO BROWSE", 18, new Color(.59f, .75f, .78f));
         }
 
         private RectTransform PCard(Transform parent, CardInstance card, Rect area, bool hidden = false)
@@ -343,8 +384,6 @@ namespace CardGame.Presentation
                 PLabel(frame.transform, new Rect(3, 3, Mathf.Max(24, area.width * .22f), Mathf.Max(24, area.width * .22f)),
                     (_state != null && _engine != null ? _engine.MinimumManaCost(_state, card) : card.Definition.Cost).ToString(),
                     area.width > 200 ? 28 : 17, Color.white, TextAnchor.MiddleCenter, true);
-                if (card.Tapped && area.width < 200)
-                    PLabel(frame.transform, new Rect(3, area.height * .42f, area.width - 6, 29), "TAPPED", 16, new Color(.94f, .75f, .43f), TextAnchor.MiddleCenter, true);
                 if (card.EvolutionMaterials.Count > 0)
                     PLabel(frame.transform, new Rect(0, area.height - 24, area.width, 22), "+" + PCountMaterials(card) + " UNDER", 13, PCyan, TextAnchor.MiddleCenter, true);
             }
@@ -840,13 +879,19 @@ namespace CardGame.Presentation
 
         private void PVideo()
         {
-            var panel = PModal("ATTACK", .10f, .90f, false);
-            var rect = PRect(panel, "Attack video", new Rect(0, 76, _pw - 28, panel.rect.height - 158));
+            PBox(_portraitOverlay, "Attack video backdrop", new Rect(0, 0, _pw, _ph), Color.black);
+            var availableHeight = Mathf.Max(1, _ph - 144);
+            var videoWidth = Mathf.Min(_pw, availableHeight * (16f / 9f));
+            var videoHeight = videoWidth * (9f / 16f);
+            // Fit explicitly: AspectRatioFitter on a top-left-pivoted rectangle
+            // used to shrink the video towards the top instead of centering it.
+            var rect = PRect(_portraitOverlay, "Attack video", new Rect((_pw - videoWidth) * .5f,
+                (_ph - videoHeight) * .5f, videoWidth, videoHeight));
             var image = rect.gameObject.AddComponent<RawImage>(); image.texture = _videoTexture;
-            var aspect = rect.gameObject.AddComponent<AspectRatioFitter>();
-            aspect.aspectMode = AspectRatioFitter.AspectMode.FitInParent; aspect.aspectRatio = 16f / 9f;
             image.raycastTarget = false;
-            PButton(panel, new Rect(20, panel.rect.height - 68, _pw - 68, 48), "SKIP ANIMATION", () => { EndVideo(); _portraitDirty = true; }, true, PGold);
+            PLabel(_portraitOverlay, new Rect(24, 20, _pw - 48, 48), "ATTACK", 24, PGold);
+            PButton(_portraitOverlay, new Rect(24, _ph - 84, _pw - 48, 60), "SKIP ANIMATION",
+                () => { EndVideo(); _portraitDirty = true; }, true, PGold);
         }
 
         private void PWinner()
@@ -927,19 +972,20 @@ namespace CardGame.Presentation
         }
         private static Sprite PortraitSprite(bool circle, out Texture2D texture)
         {
-            const int n = 64; texture = new Texture2D(n, n, TextureFormat.RGBA32, false);
+            const int n = 256; texture = new Texture2D(n, n, TextureFormat.RGBA32, false);
             texture.filterMode = FilterMode.Bilinear; texture.wrapMode = TextureWrapMode.Clamp;
             var pixels = new Color[n * n];
+            var center = (n - 1) * .5f;
             for (var y = 0; y < n; y++) for (var x = 0; x < n; x++)
             {
-                var dx = circle ? x - 31.5f : Mathf.Max(0, Mathf.Abs(x - 31.5f) - 22);
-                var dy = circle ? y - 31.5f : Mathf.Max(0, Mathf.Abs(y - 31.5f) - 22);
+                var dx = circle ? x - center : Mathf.Max(0, Mathf.Abs(x - center) - 88);
+                var dy = circle ? y - center : Mathf.Max(0, Mathf.Abs(y - center) - 88);
                 var distance = Mathf.Sqrt(dx * dx + dy * dy);
-                pixels[y * n + x] = new Color(1, 1, 1, Mathf.Clamp01((circle ? 31 : 9) - distance));
+                pixels[y * n + x] = new Color(1, 1, 1, Mathf.Clamp01((circle ? 127 : 36) - distance));
             }
             texture.SetPixels(pixels); texture.Apply();
-            return Sprite.Create(texture, new Rect(0, 0, n, n), new Vector2(.5f, .5f), 100, 0,
-                SpriteMeshType.FullRect, new Vector4(12, 12, 12, 12));
+            return Sprite.Create(texture, new Rect(0, 0, n, n), new Vector2(.5f, .5f), 400, 0,
+                SpriteMeshType.FullRect, new Vector4(48, 48, 48, 48));
         }
         private void DisposePortraitInterface()
         {

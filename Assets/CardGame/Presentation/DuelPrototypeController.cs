@@ -1625,8 +1625,7 @@ namespace CardGame.Presentation
                 {
                     _message = $"{attacker.Definition.Name} attacks you!";
                     yield return PlayAttackVideo(attacker);
-                    _awaitingHumanBlock = true;
-                    while (_awaitingHumanBlock) yield return null;
+                    yield return WaitForHumanBlockOrResolve();
                 }
                 while (_state.PendingShieldTriggers.Count > 0) yield return null;
                 yield return new WaitForSeconds(0.2f);
@@ -1635,6 +1634,21 @@ namespace CardGame.Presentation
                 yield return RunAction((engine, state) => engine.EndTurn(state, ComputerId),
                     result => ShowResult(result, result.Success ? "Your turn." : null));
             _busy = false;
+        }
+
+        private IEnumerator WaitForHumanBlockOrResolve()
+        {
+            if (_state.PendingAttack == null) yield break;
+            // Ask only when the defender has a legal decision. Use the engine's
+            // current candidates so tapped/restricted blockers do not cause a prompt.
+            if (!EligibleBlockers(_state.Players[HumanId]).Any())
+            {
+                yield return RunAction((engine, state) => engine.DeclineBlockAndResolve(state, HumanId),
+                    result => ShowResult(result));
+                yield break;
+            }
+            _awaitingHumanBlock = true;
+            while (_awaitingHumanBlock) yield return null;
         }
 
         private void ResolveHumanBlock(long blockerId)
