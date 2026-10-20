@@ -98,7 +98,9 @@ namespace CardGame.Core.Tests
         {
             var state = AttackState(); var engine = new RulesEngine();
             engine.DeclareAttack(state, 0, 1, AttackTargetKind.Player, 0, 12);
-            state.Players[1].Shields.Single(c => c.InstanceId == 12).ResetTransientZoneState();
+            // Model a shield's new zone incarnation through public fixture
+            // state. The engine's reset helper is internal to the Core assembly.
+            state.Players[1].Shields.Single(c => c.InstanceId == 12).ZoneChangeVersion++;
             var session = new AbilityActionSession(state, 0, (e, s) => e.DeclineBlockAndResolve(s, 1));
             Assert.That(session.IsComplete, Is.False, "The attacker must choose again after the preferred shield changes zones.");
             Assert.That(session.PendingChoice.Cards.Count, Is.EqualTo(3));
