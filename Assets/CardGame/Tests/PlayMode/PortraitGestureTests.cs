@@ -61,6 +61,43 @@ namespace CardGame.Presentation.Tests
         }
 
         [UnityTest]
+        public IEnumerator CustomGraphics_HaveRenderersAndCanBeClipped()
+        {
+            var graphics = _controller.GetComponentsInChildren<Component>(true)
+                .Where(c => c.GetType().Name == "PortraitShieldGraphic" || c.GetType().Name == "PortraitAttackArrow").ToArray();
+            Assert.That(graphics.Length, Is.GreaterThan(1));
+            foreach (var graphic in graphics)
+                Assert.That(graphic.GetComponent<CanvasRenderer>(), Is.Not.Null, graphic.name);
+            Canvas.ForceUpdateCanvases();
+            yield return null;
+        }
+
+        [UnityTest]
+        public IEnumerator DeckSetup_SelectionsKeepScrollPositionAndStartButtonFixed()
+        {
+            Set("_showDeckSetup", true); Set("_portraitDirty", true);
+            yield return null;
+            var scroll = SetupScroll();
+            var start = Find("START DUEL"); var startPosition = Center(start);
+            Assert.That(start.parent.name, Is.EqualTo("Deck setup footer"));
+            foreach (var name in new[] { "DM-01", "Fire", "ALL SETS" })
+            {
+                scroll = SetupScroll();
+                var property = scroll.GetType().GetProperty("verticalNormalizedPosition");
+                property.SetValue(scroll, .15f);
+                yield return null;
+                var button = scroll.GetComponentsInChildren<Component>().First(c => c.GetType().Name == "Button" &&
+                    c.name.Replace("✓ ", "") == name);
+                var click = button.GetType().GetProperty("onClick").GetValue(button);
+                click.GetType().GetMethod("Invoke").Invoke(click, null);
+                yield return null;
+                yield return null;
+                Assert.That((float)property.GetValue(SetupScroll()), Is.EqualTo(.15f).Within(.01f), name);
+                Assert.That(Vector2.Distance(Center(Find("START DUEL")), startPosition), Is.LessThan(1f), name);
+            }
+        }
+
+        [UnityTest]
         public IEnumerator AttackDrag_ReturnToSourceCancelsWithoutTapping()
         {
             var source = Find("attacker"); var target = Find("target");
@@ -134,6 +171,7 @@ namespace CardGame.Presentation.Tests
         }
 
         private GameState State => (GameState)Get("_state");
+        private Component SetupScroll() => _controller.GetComponentsInChildren<Component>().Single(c => c.GetType().Name == "ScrollRect");
         private object Get(string field) => ControllerType.GetField(field, BindingFlags.NonPublic | BindingFlags.Instance).GetValue(_controller);
         private void Set(string field, object value) => ControllerType.GetField(field, BindingFlags.NonPublic | BindingFlags.Instance).SetValue(_controller, value);
         private RectTransform Find(string name) => _controller.GetComponentsInChildren<RectTransform>().First(r => r.name == name);
