@@ -7,6 +7,8 @@ a centred portrait table. The layout uses the device safe area.
 
 ## Controls
 
+- Deck setup keeps its scroll position when sets or civilizations change. The
+  **Start duel** bar stays fixed at the bottom while both decks are configured.
 - Tap a hand card: open it at the centre at half the screen's height. Swipe left
   or right across the enlarged card to browse the entire hand; arrows also work.
   X closes the viewer.
@@ -55,9 +57,11 @@ No scene objects, Canvas wiring, or input action asset must be created manually.
 2. Open the scene you already run and choose a portrait aspect in the Game view:
    9:16, then a taller phone aspect such as 9:20. Press Play.
 3. Run Test Runner **EditMode / Run All** (3,076 core tests at this checkpoint).
-4. Run Test Runner **PlayMode**, fixture `PortraitGestureTests`. These six tests
+4. Run Test Runner **PlayMode**, fixture `PortraitGestureTests`. These eight tests
    exercise Canvas creation, hidden shield labels, valid attack drops, invalid
-   drops, returning to the source, long-press hand browsing, and pointer cancel.
+   drops, returning to the source, long-press hand browsing, pointer cancel,
+   renderer requirements for custom graphics, and deck setup scroll preservation
+   with the fixed Start duel bar.
 5. Build And Run the Android Development Build using the previously saved scene.
    Check the status bar/notch and bottom gesture area do not overlap controls.
 6. On the phone, test short and large hands, crowded battle zones, preview swipes,
