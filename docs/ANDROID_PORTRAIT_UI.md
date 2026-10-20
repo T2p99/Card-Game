@@ -29,14 +29,26 @@ a centred portrait table. The layout uses the device safe area.
 - Summon/cast uses a valid minimum-cost automatic mana payment. Use **Choose
   mana manually** to change the selected payment or pay a higher permitted cost.
   Charge mana is a separate action and respects the turn's charge step.
-- Tap the mana stack or graveyard to inspect its face-up cards. Decks show only
+- Tap the graveyard to inspect its face-up cards. Decks show only
   counts. Evolution tops display their material count and have a read-only
   **View cards under this evolution** action.
 - Optional abilities, evolution bases, spell targets, Shield Triggers, blocker
   choices, ordering, race/civilization/player choices, and number choices use the
   existing transactional decision engine through portrait overlays.
+- Mana cards are face up, upside down, and arranged in a horizontally scrollable
+  row. Tap a card to inspect it; the enlarged preview is upright. Mana headers
+  show ready/total counts. A tapped mana card turns a further quarter turn.
+- Graveyards show up to four scattered face-up cards, a total count, and the full
+  **Graveyard** label. An empty graveyard shows an empty footprint, not a card back.
 - Power above a battle creature is its current power. When attack power differs,
-  an additional ATK value appears on the card. Tapped cards have a TAPPED banner.
+  an additional ATK value appears below it. Tapped battle cards turn sideways;
+  the power labels remain upright. The row reserves room for the rotated cards.
+- Shields are rectangular, with a cyan rim drawn as scalable geometry.
+- Opponent attacks resolve automatically when the engine finds no legal blocker.
+  If a legal blocker exists, the player still chooses; mandatory blocks remain enforced.
+- Attack clips use a full-screen black overlay with a centered 16:9 video and a
+  bottom Skip button. Landscape clips retain black space above and below on a
+  portrait screen instead of stretching or cropping.
 
 ## Input settings
 
@@ -57,11 +69,13 @@ No scene objects, Canvas wiring, or input action asset must be created manually.
 2. Open the scene you already run and choose a portrait aspect in the Game view:
    9:16, then a taller phone aspect such as 9:20. Press Play.
 3. Run Test Runner **EditMode / Run All** (3,076 core tests at this checkpoint).
-4. Run Test Runner **PlayMode**, fixture `PortraitGestureTests`. These eight tests
+4. Run Test Runner **PlayMode**, fixture `PortraitGestureTests`. These fourteen tests
    exercise Canvas creation, hidden shield labels, valid attack drops, invalid
    drops, returning to the source, long-press hand browsing, pointer cancel,
    renderer requirements for custom graphics, and deck setup scroll preservation
-   with the fixed Start duel bar.
+   with the fixed Start duel bar. Additional cases cover tapped-card rotation,
+   inverted mana, face-up graveyard piles, centered video, automatic resolution
+   without legal blockers, and retaining the prompt when blocking is possible.
 5. Build And Run the Android Development Build using the previously saved scene.
    Check the status bar/notch and bottom gesture area do not overlap controls.
 6. On the phone, test short and large hands, crowded battle zones, preview swipes,
@@ -71,13 +85,25 @@ No scene objects, Canvas wiring, or input action asset must be created manually.
 
 ## Validation limits
 
-The pure-C# core suite is executed outside Unity, with Core and tests compiled
-as separate assemblies to match Unity's access boundaries. Compiling both into
-one assembly does not check access to internal engine helpers. Presentation code is compiled
-against API stubs for both input paths. These are not a Unity compile or an
-Android device test. The PlayMode tests and visual/touch checks must also run in
-the real Unity editor/device environment; the development environment used for
-this change has no Unity editor or connected Android device.
+The pure-C# core suite must use separate Core and test assemblies to match Unity's
+access boundaries. Compiling both into one assembly does not check access to
+internal engine helpers. Syntax checks, layout calculations, and compilation
+against API stubs do not replace a real Unity compile or Android device test.
+The latest zone/rotation/video revision has passed C# syntax checks and portrait
+zone-separation calculations at 720-wide heights of 1280, 1440, 1600, and 1760.
+The PlayMode tests and visual/touch checks must run in the real Unity editor/device
+environment; this development environment has no Unity editor or connected Android device.
+
+## Visual quality
+
+The interface still uses Unity's legacy runtime font. A production typography
+pass should use TextMeshPro SDF fonts with deliberately sized headings, controls,
+and body text. The new decorative masks are 256 pixels with correct circle
+rendering; shield rims use geometry. Neither change increases card-art detail.
+Sample bundled card scans are 491 by 682 pixels, which limits enlarged previews.
+Higher-resolution source images and a coherent icon/panel art set are needed for
+finished mobile-game artwork. Judge the device build at its native resolution;
+a reduced Editor Game view or downscaled screenshot loses detail.
 
 ## Shield rule sources
 
