@@ -67,7 +67,9 @@ No scene objects, Canvas wiring, or input action asset must be created manually.
 
 ## Validation limits
 
-The pure-C# core suite is executed outside Unity. Presentation code is compiled
+The pure-C# core suite is executed outside Unity, with Core and tests compiled
+as separate assemblies to match Unity's access boundaries. Compiling both into
+one assembly does not check access to internal engine helpers. Presentation code is compiled
 against API stubs for both input paths. These are not a Unity compile or an
 Android device test. The PlayMode tests and visual/touch checks must also run in
 the real Unity editor/device environment; the development environment used for
