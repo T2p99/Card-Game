@@ -15,7 +15,9 @@ Implemented starter spells currently include Burning Power, Crimson Hammer, Magm
 3. Open with Unity `6000.5.4f1`.
 4. Let Unity restore packages and generate missing local cache files.
 
-The duel interface is landscape-first. In the Unity **Game** tab, select a `16:9` aspect ratio to preview the same centered tabletop layout used on mobile. Before each duel, both players can independently filter their generated deck pools by card set and civilization; a multicolored card is eligible only when every civilization printed on it is selected.
+The duel interface is portrait-first. In the Unity **Game** tab, select `9:16` or a taller phone aspect such as `9:20`. Android touch and desktop mouse use the same interface: tap to inspect, hold and slide to browse the hand, and drag a battle creature to attack with a targeting arrow. Summon/cast automatically selects suitable mana, with a manual override. See [Android portrait controls and verification](docs/ANDROID_PORTRAIT_UI.md).
+
+Before each duel, both players can independently filter their generated deck pools by card set and civilization; a multicolored card is eligible only when every civilization printed on it is selected.
 
 See [docs/RULES_AND_SCOPE.md](docs/RULES_AND_SCOPE.md) for implemented rules and known gaps.
 
