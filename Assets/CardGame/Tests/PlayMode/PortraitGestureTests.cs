@@ -98,6 +98,114 @@ namespace CardGame.Presentation.Tests
         }
 
         [UnityTest]
+        public IEnumerator TappedBattleCard_TurnsSidewaysWithUprightPower()
+        {
+            var card = Find("target");
+            Assert.That(Mathf.Abs(Mathf.DeltaAngle(card.localEulerAngles.z, -90)), Is.LessThan(.1f));
+            var power = card.parent.GetComponentsInChildren<Component>().Single(c => c.GetType().Name == "Text" &&
+                (string)c.GetType().GetProperty("text").GetValue(c) == "2000");
+            Assert.That(Mathf.Abs(Mathf.DeltaAngle(power.transform.eulerAngles.z, 0)), Is.LessThan(.1f));
+            yield return null;
+        }
+
+        [UnityTest]
+        public IEnumerator ManaCards_AreFaceUpInvertedAndTurnWhenTapped()
+        {
+            var ready = Card(50, "ready mana"); var tapped = Card(51, "tapped mana"); tapped.Tapped = true;
+            State.Players[0].Mana.Add(ready); State.Players[0].Mana.Add(tapped);
+            Set("_portraitDirty", true);
+            yield return null;
+            Assert.That(Mathf.Abs(Mathf.DeltaAngle(Find("ready mana").localEulerAngles.z, 180)), Is.LessThan(.1f));
+            Assert.That(Mathf.Abs(Mathf.DeltaAngle(Find("tapped mana").localEulerAngles.z, 90)), Is.LessThan(.1f));
+            Assert.That(Find("Your mana row").GetComponentsInChildren<RectTransform>()
+                .Any(r => r.name == "Hidden card"), Is.False);
+        }
+
+        [UnityTest]
+        public IEnumerator Graveyard_ShowsScatteredFaceUpCardsAndFullLabel()
+        {
+            for (var i = 0; i < 4; i++) State.Players[0].Graveyard.Add(Card(60 + i, "grave " + i));
+            Set("_portraitDirty", true);
+            yield return null;
+            var cards = Enumerable.Range(0, 4).Select(i => Find("grave " + i)).ToArray();
+            Assert.That(cards.All(c => c.parent.name == "Graveyard pile"), Is.True);
+            Assert.That(cards.Select(c => c.localEulerAngles.z).Distinct().Count(), Is.GreaterThan(1));
+            Assert.That(cards[0].parent.GetComponentsInChildren<RectTransform>().Any(r => r.name == "Hidden card"), Is.False);
+            Assert.That(_controller.GetComponentsInChildren<Component>().Count(c => c.GetType().Name == "Text" &&
+                (string)c.GetType().GetProperty("text").GetValue(c) == "Graveyard"), Is.EqualTo(2));
+        }
+
+        [UnityTest]
+        public IEnumerator AttackVideo_IsCenteredAndKeepsItsAspectRatio()
+        {
+            Set("_showVideo", true); Set("_portraitDirty", true);
+            yield return null;
+            var video = Find("Attack video"); var frame = (RectTransform)Get("_portraitFrame");
+            Assert.That(Vector2.Distance(Center(video), Center(frame)), Is.LessThan(1f));
+            Assert.That(video.rect.width / video.rect.height, Is.EqualTo(16f / 9f).Within(.001f));
+            Assert.That(Find("Attack video backdrop").rect.height, Is.EqualTo(frame.rect.height).Within(1));
+            Set("_showVideo", false);
+        }
+
+        [UnityTest]
+        public IEnumerator NoLegalBlocker_ResolvesWithoutOpeningBlockerPrompt()
+        {
+            // No blockers, a tapped blocker, and an unblockable attacker must
+            // all skip the prompt. The engine remains responsible for damage.
+            for (var scenario = 0; scenario < 3; scenario++)
+            {
+                var state = BlockTestState(scenario > 0);
+                if (scenario == 1) state.Players[0].BattleZone.Last().Tapped = true;
+                if (scenario == 2) state.Players[1].BattleZone[0].TemporaryKeywords.Add(CardKeyword.Unblockable);
+                var engine = new RulesEngine();
+                Assert.That(engine.DeclareAttack(state, 1, 201, AttackTargetKind.Creature, 101).Success, Is.True);
+                Assert.That(engine.GetBlockerCandidates(state, 0).Count, Is.Zero);
+                Set("_state", state); Set("_awaitingHumanBlock", false);
+                var routine = (IEnumerator)ControllerType.GetMethod("WaitForHumanBlockOrResolve", BindingFlags.Instance | BindingFlags.NonPublic)
+                    .Invoke(_controller, null);
+                while (routine.MoveNext())
+                {
+                    Assert.That((bool)Get("_awaitingHumanBlock"), Is.False);
+                    yield return routine.Current;
+                }
+                Assert.That(State.PendingAttack, Is.Null);
+                Assert.That((bool)Get("_awaitingHumanBlock"), Is.False);
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator LegalBlocker_StillRequiresPlayerDecision()
+        {
+            var state = BlockTestState(true); var engine = new RulesEngine();
+            Assert.That(engine.DeclareAttack(state, 1, 201, AttackTargetKind.Creature, 101).Success, Is.True);
+            Assert.That(engine.GetBlockerCandidates(state, 0).Count, Is.EqualTo(1));
+            Set("_state", state);
+            var routine = (IEnumerator)ControllerType.GetMethod("WaitForHumanBlockOrResolve", BindingFlags.Instance | BindingFlags.NonPublic)
+                .Invoke(_controller, null);
+            Assert.That(routine.MoveNext(), Is.True);
+            Assert.That((bool)Get("_awaitingHumanBlock"), Is.True);
+            Assert.That(State.PendingAttack, Is.Not.Null);
+            Set("_awaitingHumanBlock", false);
+            Assert.That(routine.MoveNext(), Is.False);
+            yield return null;
+        }
+
+        private static GameState BlockTestState(bool withBlocker)
+        {
+            var state = new GameState { ActivePlayerId = 1, Phase = GamePhase.Main, TurnNumber = 5,
+                Players = new[] { new PlayerState { PlayerId = 0 }, new PlayerState { PlayerId = 1 } } };
+            var defender = Card(101, "defender"); defender.Tapped = true;
+            state.Players[0].BattleZone.Add(defender);
+            state.Players[1].BattleZone.Add(Card(201, "opponent attacker"));
+            if (withBlocker)
+            {
+                var blocker = Card(102, "blocker"); blocker.TemporaryKeywords.Add(CardKeyword.Blocker);
+                state.Players[0].BattleZone.Add(blocker);
+            }
+            return state;
+        }
+
+        [UnityTest]
         public IEnumerator AttackDrag_ReturnToSourceCancelsWithoutTapping()
         {
             var source = Find("attacker"); var target = Find("target");
