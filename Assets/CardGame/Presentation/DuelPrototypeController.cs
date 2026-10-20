@@ -9,7 +9,7 @@ using UnityEngine.Video;
 
 namespace CardGame.Presentation
 {
-    public sealed class DuelPrototypeController : MonoBehaviour
+    public sealed partial class DuelPrototypeController : MonoBehaviour
     {
         private const int HumanId = 0;
         private const int ComputerId = 1;
@@ -100,7 +100,10 @@ namespace CardGame.Presentation
 
         private void Awake()
         {
-            Screen.orientation = ScreenOrientation.LandscapeLeft;
+            Screen.orientation = ScreenOrientation.Portrait;
+            Screen.autorotateToLandscapeLeft = false;
+            Screen.autorotateToLandscapeRight = false;
+            Screen.autorotateToPortraitUpsideDown = false;
             _cardBack = Resources.Load<Texture2D>("CardGame/UI/CardBack");
             if (_cardBack == null)
             {
@@ -114,6 +117,7 @@ namespace CardGame.Presentation
             var turnCardShader = Resources.Load<Shader>("CardGame/UI/RotateCard90");
             if (turnCardShader != null) _turnCardMaterial = new Material(turnCardShader);
             CreateVideoPlayer();
+            CreatePortraitInterface();
         }
 
         private void CreateVideoPlayer()
@@ -159,6 +163,7 @@ namespace CardGame.Presentation
 
         private void OnGUI()
         {
+            if (_portraitCanvas != null) return;
             const float referenceWidth = 1600f;
             const float referenceHeight = 900f;
             var previousMatrix = GUI.matrix;
@@ -1904,20 +1909,7 @@ namespace CardGame.Presentation
 
         private IReadOnlyCollection<long> SelectPayment(PlayerState player, CardInstance card)
         {
-            var cost = _engine.MinimumManaCost(_state, card);
-            var untapped = player.Mana.Where(mana => !mana.Tapped).ToList();
-            var selected = new List<long>();
-            foreach (var civilization in card.Definition.Civilizations.Distinct())
-            {
-                var matching = untapped.FirstOrDefault(mana =>
-                    !selected.Contains(mana.InstanceId) &&
-                    mana.Definition.Civilizations.Contains(civilization));
-                if (matching == null) return Array.Empty<long>();
-                selected.Add(matching.InstanceId);
-            }
-            selected.AddRange(untapped.Where(mana => !selected.Contains(mana.InstanceId))
-                .Take(cost - selected.Count).Select(mana => mana.InstanceId));
-            return selected.Count == cost ? selected : (IReadOnlyCollection<long>)Array.Empty<long>();
+            return _engine.FindManaPayment(_state, player.PlayerId, card);
         }
 
         private IEnumerable<CardInstance> EligibleBlockers(PlayerState player) =>
@@ -1956,6 +1948,7 @@ namespace CardGame.Presentation
 
         private void OnDestroy()
         {
+            DisposePortraitInterface();
             if (_videoTexture != null) _videoTexture.Release();
             foreach (var turned in _turnedCardArt.Values)
                 if (turned != null) turned.Release();
