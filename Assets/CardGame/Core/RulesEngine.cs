@@ -8,10 +8,16 @@ namespace CardGame.Core
     {
         private long _nextInstanceId = 1;
         private readonly AbilityResolver _abilities;
+        private readonly Action<RuleTraceEntry> _trace;
 
-        public RulesEngine(IAbilityDecisionProvider decisions = null)
+        public RulesEngine(IAbilityDecisionProvider decisions = null) : this(decisions, null)
         {
-            _abilities = new AbilityResolver(decisions);
+        }
+
+        public RulesEngine(IAbilityDecisionProvider decisions, Action<RuleTraceEntry> trace)
+        {
+            _trace = trace;
+            _abilities = new AbilityResolver(decisions, trace);
         }
 
         public GameState StartGame(
@@ -762,6 +768,13 @@ namespace CardGame.Core
                 PreferredShieldInstanceId = preferredShieldInstanceId,
                 PreferredShieldZoneChangeVersion = preferredShield?.ZoneChangeVersion ?? -1
             };
+            if (_trace != null)
+            {
+                var entry = RuleTraceEntry.ForCard("AttackDeclared", playerId, attacker, attackedCreature);
+                entry.Detail = targetKind.ToString();
+                entry.IntendedTargetInstanceId = targetCreatureInstanceId;
+                _trace(entry);
+            }
             attacker.AttackedThisTurn = true;
             ResolveAttackAbilities(state, playerId, attacker);
             if (state.IsFinished) return RuleResult.Ok();
@@ -879,6 +892,12 @@ namespace CardGame.Core
             var blocker = Find(defender.BattleZone, blockerInstanceId);
             var attackingPlayer = state.Players[1 - defendingPlayerId];
             var attacker = Find(attackingPlayer.BattleZone, attack.AttackerInstanceId);
+            if (_trace != null)
+            {
+                var entry = RuleTraceEntry.ForCard("BlockDeclared", defendingPlayerId, blocker, attacker);
+                entry.IntendedTargetInstanceId = attack.TargetCreatureInstanceId;
+                _trace(entry);
+            }
             if (state.BlockedCreatureGetsSlayerThisTurn[attackingPlayer.PlayerId] &&
                 !attacker.TemporaryKeywords.Contains(CardKeyword.Slayer))
                 attacker.TemporaryKeywords.Add(CardKeyword.Slayer);
@@ -930,6 +949,14 @@ namespace CardGame.Core
             {
                 ConcludeInterruptedAttack(state, attack);
                 return RuleResult.Ok();
+            }
+            if (_trace != null)
+            {
+                var attacker = Find(state.Players[1 - defendingPlayerId].BattleZone,
+                    attack.AttackerInstanceId);
+                var entry = RuleTraceEntry.ForCard("BlockDeclined", defendingPlayerId, attacker);
+                entry.IntendedTargetInstanceId = attack.TargetCreatureInstanceId;
+                _trace(entry);
             }
 
             if (state.RequiredBlockerInstanceId != 0)
@@ -1748,6 +1775,19 @@ namespace CardGame.Core
                 var defenderPower = _abilities.CurrentPower(state, defender);
                 var attackerLost = attackerPower <= defenderPower;
                 var defenderLost = defenderPower <= attackerPower;
+                if (_trace != null)
+                {
+                    var entry = RuleTraceEntry.ForCard("Battle", attackerOwner.PlayerId, attacker, defender);
+                    entry.SourcePower = attackerPower;
+                    entry.TargetPower = defenderPower;
+                    entry.SourceKeywords = GetEffectiveKeywords(state, attacker)
+                        .Select(keyword => keyword.ToString()).ToArray();
+                    entry.TargetKeywords = GetEffectiveKeywords(state, defender)
+                        .Select(keyword => keyword.ToString()).ToArray();
+                    entry.SourceLost = attackerLost;
+                    entry.TargetLost = defenderLost;
+                    _trace(entry);
+                }
                 _abilities.ResolveBattleOutcome(state, attacker, defender,
                     attackerLost, defenderLost);
             }

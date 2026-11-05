@@ -52,6 +52,7 @@ namespace CardGame.Core
         public GameState State { get; private set; }
         public AbilityChoice PendingChoice { get; private set; }
         public RuleResult Result { get; private set; }
+        public IReadOnlyList<RuleTraceEntry> Trace { get; private set; } = Array.Empty<RuleTraceEntry>();
         public bool IsComplete => Result != null;
 
         public AbilityActionSession(GameState state, int humanId,
@@ -98,12 +99,15 @@ namespace CardGame.Core
         private void Advance()
         {
             PendingChoice = null;
+            Trace = Array.Empty<RuleTraceEntry>();
             var trial = GameStateSnapshot.Copy(_baseline);
-            var provider = new Decisions(this);
+            var trace = new List<RuleTraceEntry>();
+            var provider = new Decisions(this, trace.Add);
             try
             {
-                Result = _command(new RulesEngine(provider), trial);
+                Result = _command(new RulesEngine(provider, trace.Add), trial);
                 if (Result.Success) State = trial;
+                Trace = trace.ToArray();
             }
             catch (AwaitChoice pending)
             {
@@ -117,10 +121,15 @@ namespace CardGame.Core
             IAbilityReplacementDecisionProvider, IAbilityTriggerOrderDecisionProvider
         {
             private readonly AbilityActionSession _session;
+            private readonly Action<RuleTraceEntry> _trace;
             private readonly DeterministicAbilityDecisionProvider _automatic =
                 new DeterministicAbilityDecisionProvider();
             private int _cursor;
-            public Decisions(AbilityActionSession session) { _session = session; }
+            public Decisions(AbilityActionSession session, Action<RuleTraceEntry> trace)
+            {
+                _session = session;
+                _trace = trace;
+            }
 
             private Answer Ask(AbilityChoice choice, string abilityId, GameState state = null)
             {
@@ -148,14 +157,28 @@ namespace CardGame.Core
             private int Option(GameState state, int playerId, CardInstance source, string id,
                 string prompt, IReadOnlyList<string> options)
             {
-                if (options.Count <= 1) return 0;
-                return Ask(new AbilityChoice { Kind = AbilityChoiceKind.Options,
+                var automatic = playerId != _session._humanId || options.Count <= 1;
+                var value = automatic ? 0 : Ask(new AbilityChoice { Kind = AbilityChoiceKind.Options,
                     PlayerId = playerId, Source = source, Prompt = prompt,
                     Options = options, Minimum = 0, Maximum = options.Count - 1 }, id, state).Value;
+                RecordOption(playerId, source, id, options, value, automatic);
+                return value;
+            }
+
+            private void RecordOption(int playerId, CardInstance source, string id,
+                IReadOnlyList<string> options, int value, bool automatic)
+            {
+                var entry = RuleTraceEntry.ForCard("Choice", playerId, source);
+                entry.AbilityId = id;
+                entry.Detail = "Options";
+                entry.Options = options.ToArray();
+                entry.ChoiceValue = value;
+                entry.Automatic = automatic;
+                _trace(entry);
             }
 
             public bool ChooseOptional(GameState state, int playerId, CardInstance source,
-                RuleAbilityDefinition ability) => playerId != _session._humanId ||
+                RuleAbilityDefinition ability) =>
                 Option(state, playerId, source, ability.Id, Prompt(source, ability, "Use this optional ability?"),
                     new[] { "Use ability", "Decline" }) == 0;
 
@@ -165,19 +188,33 @@ namespace CardGame.Core
             {
                 maximum = Math.Min(maximum, candidates.Count);
                 minimum = Math.Min(minimum, maximum);
-                if (playerId != _session._humanId || maximum == 0 ||
-                    (minimum == 1 && maximum == 1 && candidates.Count == 1))
-                    return _automatic.ChooseCards(state, playerId, source, ability,
+                var automatic = playerId != _session._humanId || maximum == 0 ||
+                    (minimum == 1 && maximum == 1 && candidates.Count == 1);
+                IReadOnlyList<CardInstance> selected;
+                if (automatic)
+                    selected = _automatic.ChooseCards(state, playerId, source, ability,
                         candidates, minimum, maximum);
-                var answer = Ask(new AbilityChoice { Kind = AbilityChoiceKind.Cards,
-                    PlayerId = playerId, Source = source, Cards = candidates,
-                    CardLabels = candidates.Select((c, i) => CardLabel(state, playerId, c, i)).ToArray(),
-                    Minimum = minimum, Maximum = maximum,
-                    MaximumCombinedPower = ability.Selector?.Mode == RuleSelectionMode.PowerBudget
-                        ? ability.Selector.MaximumCombinedPower : 0,
-                    CardPowers = candidates.Select(c => new AbilityResolver().CurrentPower(state, c)).ToArray(),
-                    Prompt = Prompt(source, ability, $"Choose {minimum}–{maximum} cards. Select in the order to resolve.") }, ability.Id, state);
-                return answer.Cards.Select(id => candidates.First(c => c.InstanceId == id)).ToArray();
+                else
+                {
+                    var answer = Ask(new AbilityChoice { Kind = AbilityChoiceKind.Cards,
+                        PlayerId = playerId, Source = source, Cards = candidates,
+                        CardLabels = candidates.Select((c, i) => CardLabel(state, playerId, c, i)).ToArray(),
+                        Minimum = minimum, Maximum = maximum,
+                        MaximumCombinedPower = ability.Selector?.Mode == RuleSelectionMode.PowerBudget
+                            ? ability.Selector.MaximumCombinedPower : 0,
+                        CardPowers = candidates.Select(c => new AbilityResolver().CurrentPower(state, c)).ToArray(),
+                        Prompt = Prompt(source, ability, $"Choose {minimum}–{maximum} cards. Select in the order to resolve.") }, ability.Id, state);
+                    selected = answer.Cards.Select(id => candidates.First(c => c.InstanceId == id)).ToArray();
+                }
+                var entry = RuleTraceEntry.ForAbility("Choice", playerId, source, ability);
+                entry.Detail = "Cards";
+                entry.CandidateInstanceIds = candidates.Select(card => card.InstanceId).ToArray();
+                entry.SelectedInstanceIds = selected.Select(card => card.InstanceId).ToArray();
+                entry.Minimum = minimum;
+                entry.Maximum = maximum;
+                entry.Automatic = automatic;
+                _trace(entry);
+                return selected;
             }
 
             private static string CardLabel(GameState state, int playerId, CardInstance card, int index)
@@ -204,39 +241,67 @@ namespace CardGame.Core
 
             public string ChooseRace(GameState state, int playerId, CardInstance source,
                 RuleAbilityDefinition ability, IReadOnlyList<string> races) =>
-                races.Count == 0 ? string.Empty : races[playerId != _session._humanId ? 0 :
+                races.Count == 0 ? string.Empty : races[
                     Option(state, playerId, source, ability.Id, Prompt(source, ability, "Choose a race."), races)];
 
             public Civilization ChooseCivilization(GameState state, int playerId, CardInstance source,
                 RuleAbilityDefinition ability, IReadOnlyList<Civilization> civilizations) =>
-                civilizations[playerId != _session._humanId ? 0 : Option(state, playerId, source,
+                civilizations[Option(state, playerId, source,
                     ability.Id, Prompt(source, ability, "Choose a civilization."),
                     civilizations.Select(c => c.ToString()).ToArray())];
 
             public int ChooseNumber(GameState state, int playerId, CardInstance source,
-                RuleAbilityDefinition ability, int minimum, int maximum, int suggested) =>
-                playerId != _session._humanId || minimum == maximum ? suggested :
-                Ask(new AbilityChoice { Kind = AbilityChoiceKind.Number,
+                RuleAbilityDefinition ability, int minimum, int maximum, int suggested)
+            {
+                var automatic = playerId != _session._humanId || minimum == maximum;
+                var value = automatic ? suggested : Ask(new AbilityChoice { Kind = AbilityChoiceKind.Number,
                     PlayerId = playerId, Source = source, Minimum = minimum,
                     Maximum = maximum, Suggested = suggested,
                     Prompt = Prompt(source, ability, $"Choose a number from {minimum} to {maximum}.") }, ability.Id, state).Value;
+                var entry = RuleTraceEntry.ForAbility("Choice", playerId, source, ability);
+                entry.Detail = "Number";
+                entry.ChoiceValue = value;
+                entry.Minimum = minimum;
+                entry.Maximum = maximum;
+                entry.Automatic = automatic;
+                _trace(entry);
+                return value;
+            }
 
             public int ChoosePlayer(GameState state, int playerId, CardInstance source,
-                RuleAbilityDefinition ability, IReadOnlyList<int> players) =>
-                playerId != _session._humanId ? playerId : players[Option(state, playerId, source,
+                RuleAbilityDefinition ability, IReadOnlyList<int> players)
+            {
+                if (playerId != _session._humanId)
+                {
+                    var entry = RuleTraceEntry.ForAbility("Choice", playerId, source, ability);
+                    entry.Detail = "Player";
+                    entry.Options = players.Select(id => id.ToString()).ToArray();
+                    entry.ChoiceValue = playerId;
+                    entry.Automatic = true;
+                    _trace(entry);
+                    return playerId;
+                }
+                return players[Option(state, playerId, source,
                     ability.Id, Prompt(source, ability, "Choose a player."),
                     players.Select(id => id == _session._humanId ? "You" : "Opponent").ToArray())];
+            }
 
             public int ChooseReplacement(GameState state, int playerId, CardInstance affectedCard,
                 IReadOnlyList<CardInstance> sources, IReadOnlyList<RuleAbilityDefinition> abilities) =>
-                playerId != _session._humanId ? 0 : Option(state, playerId, affectedCard,
+                Option(state, playerId, affectedCard,
                     "replacement", "Choose a replacement effect.", abilities.Select((a, i) =>
                         sources[i].Definition.Name + " — " + (string.IsNullOrWhiteSpace(a.RulesText)
                             ? sources[i].Definition.RulesText : a.RulesText)).ToArray());
 
             public int ChooseNextTriggeredAbility(GameState state, int playerId,
-                CardInstance source, AbilityTiming timing, IReadOnlyList<string> ids) =>
-                playerId != _session._humanId ? 0 : Option(state, playerId, source,
+                CardInstance source, AbilityTiming timing, IReadOnlyList<string> ids)
+            {
+                if (playerId != _session._humanId)
+                {
+                    RecordOption(playerId, source, "trigger_order." + timing, ids, 0, true);
+                    return 0;
+                }
+                return Option(state, playerId, source,
                     "trigger_order." + timing, "Choose the next ability to resolve.",
                     ids.Select(id => new AbilityResolver().GetAbilityPreviews(state, source)
                         .Select(preview => preview.Ability)
@@ -245,6 +310,7 @@ namespace CardGame.Core
                         .Where(a => a != null && a.Id == id).Select(a => a.RulesText)
                         .FirstOrDefault(text => !string.IsNullOrWhiteSpace(text)) ??
                         source.Definition.RulesText).ToArray());
+            }
         }
     }
 

@@ -60,6 +60,7 @@ mono_crash.*
 *.unitypackage
 *.unitypackage.meta
 *.app
+/*_BurstDebugInformation_DoNotShip/
 
 crashlytics-build.properties
 InitTestScene*.unity*

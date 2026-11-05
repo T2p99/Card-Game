@@ -32,14 +32,6 @@ namespace CardGame.Presentation
             new Dictionary<Texture, RenderTexture>();
         private readonly HashSet<string> _artRequests = new HashSet<string>();
         private readonly HashSet<long> _selectedManaIds = new HashSet<long>();
-        private readonly HashSet<string> _humanSelectedSets =
-            new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "DM-01" };
-        private readonly HashSet<string> _computerSelectedSets =
-            new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "DM-01" };
-        private readonly HashSet<Civilization> _humanSelectedCivilizations =
-            new HashSet<Civilization>(SelectableCivilizations);
-        private readonly HashSet<Civilization> _computerSelectedCivilizations =
-            new HashSet<Civilization>(SelectableCivilizations);
         private Texture2D _cardBack;
 
         private AbilityActionSession _actionSession;
@@ -83,9 +75,9 @@ namespace CardGame.Presentation
         private float _uiWidth;
         private float _uiHeight;
         private int _matchSeed;
-        private string _setupMessage = "Choose one or more sets and civilizations for each deck pool.";
-        private string _humanDeckLabel = "DM-01";
-        private string _computerDeckLabel = "DM-01";
+        private string _setupMessage = string.Empty;
+        private string _humanDeckLabel = string.Empty;
+        private string _computerDeckLabel = string.Empty;
         private string _humanCivilizationLabel = "All civilizations";
         private string _computerCivilizationLabel = "All civilizations";
 
@@ -104,6 +96,7 @@ namespace CardGame.Presentation
             Screen.autorotateToLandscapeLeft = false;
             Screen.autorotateToLandscapeRight = false;
             Screen.autorotateToPortraitUpsideDown = false;
+            LoadSavedDecks();
             _cardBack = Resources.Load<Texture2D>("CardGame/UI/CardBack");
             if (_cardBack == null)
             {
@@ -198,6 +191,7 @@ namespace CardGame.Presentation
             if (_actionDepth > 0 || _inspectionReview != null)
             {
                 DrawAbilityChoice();
+                DrawTutorialCoach();
                 GUI.matrix = previousMatrix;
                 return;
             }
@@ -211,19 +205,13 @@ namespace CardGame.Presentation
 
             if (_showHandCardViewer) DrawCardViewer();
             if (_showVideo) DrawVideoOverlay();
-            if (_state.IsFinished) DrawWinnerOverlay();
+            DrawTutorialCoach();
+            if (_state != null && _state.IsFinished) DrawWinnerOverlay();
             GUI.matrix = previousMatrix;
         }
 
         private void DrawDeckSetup()
         {
-            var panelWidth = Mathf.Min(1320f, _uiWidth - 70f);
-            var panelHeight = Mathf.Min(780f, _uiHeight - 60f);
-            var panel = new Rect((_uiWidth - panelWidth) * 0.5f, (_uiHeight - panelHeight) * 0.5f,
-                panelWidth, panelHeight);
-            GUI.backgroundColor = new Color(0.16f, 0.19f, 0.24f);
-            GUI.Box(panel, GUIContent.none);
-
             var titleStyle = new GUIStyle(GUI.skin.label)
             {
                 alignment = TextAnchor.MiddleCenter,
@@ -237,210 +225,31 @@ namespace CardGame.Presentation
                 wordWrap = true
             };
             GUI.color = Color.white;
-            GUI.Label(new Rect(panel.x + 30f, panel.y + 20f, panel.width - 60f, 48f),
-                "CHOOSE DECK POOLS", titleStyle);
-            GUI.Label(new Rect(panel.x + 70f, panel.y + 68f, panel.width - 140f, 50f),
-                "Choose card sets and civilizations independently for each side. Multicolored cards are included only when all of their civilizations are selected. Each legal 40-card deck is freshly built and shuffled.",
-                subtitleStyle);
-
-            var gap = 30f;
-            var selectorWidth = (panel.width - 90f - gap) * 0.5f;
-            var selectorHeight = panel.height - 260f;
-            DrawSetPoolSelector(new Rect(panel.x + 45f, panel.y + 126f, selectorWidth, selectorHeight),
-                "YOUR DECK POOL", _humanSelectedSets, _humanSelectedCivilizations);
-            DrawSetPoolSelector(new Rect(panel.x + 45f + selectorWidth + gap, panel.y + 126f,
-                    selectorWidth, selectorHeight),
-                "COMPUTER DECK POOL", _computerSelectedSets, _computerSelectedCivilizations);
-
-            var humanCardNames = CountPlayableCardNames(_humanSelectedSets, _humanSelectedCivilizations);
-            var computerCardNames = CountPlayableCardNames(_computerSelectedSets, _computerSelectedCivilizations);
-            var humanReady = humanCardNames >= 10;
-            var computerReady = computerCardNames >= 10;
-            var messageStyle = new GUIStyle(subtitleStyle)
-            {
-                alignment = TextAnchor.MiddleLeft
-            };
-            messageStyle.normal.textColor = humanReady && computerReady
-                ? new Color(0.70f, 0.90f, 0.72f)
-                : new Color(1f, 0.70f, 0.30f);
-            var readinessMessage = humanReady && computerReady
-                ? _setupMessage
-                : $"A legal deck needs at least 10 different card names. Your pool has {humanCardNames}; the computer pool has {computerCardNames}.";
-            GUI.Label(new Rect(panel.x + 48f, panel.yMax - 116f, panel.width - 430f, 64f),
-                readinessMessage, messageStyle);
-
-            GUI.enabled = humanReady && computerReady;
-            if (GUI.Button(new Rect(panel.xMax - 350f, panel.yMax - 108f, 300f, 62f), "BUILD DECKS & START DUEL"))
-                StartSelectedMatch();
+            GUI.Label(new Rect(40, 180, _uiWidth - 80, 60), "DUEL MASTERS", titleStyle);
+            GUI.Label(new Rect(40, 260, _uiWidth - 80, 90), _setupMessage, subtitleStyle);
+            GUI.enabled = _savedDecks != null;
+            if (GUI.Button(new Rect((_uiWidth - 420) * .5f, 390, 420, 64), "NEW GAME")) StartSelectedMatch();
+            if (GUI.Button(new Rect((_uiWidth - 420) * .5f, 474, 420, 64), "CUSTOMIZE DECK")) OpenDeckLibrary();
             GUI.enabled = true;
+            if (GUI.Button(new Rect((_uiWidth - 420) * .5f, 558, 420, 64), "TUTORIAL")) StartTutorial();
         }
-
-        private static void DrawSetPoolSelector(
-            Rect area,
-            string title,
-            HashSet<string> selectedSets,
-            HashSet<Civilization> selectedCivilizations)
-        {
-            GUI.backgroundColor = new Color(0.10f, 0.13f, 0.17f);
-            GUI.Box(area, GUIContent.none);
-            var headerStyle = new GUIStyle(GUI.skin.label)
-            {
-                alignment = TextAnchor.MiddleCenter,
-                fontSize = 21,
-                fontStyle = FontStyle.Bold
-            };
-            GUI.Label(new Rect(area.x + 10f, area.y + 10f, area.width - 20f, 34f), title, headerStyle);
-
-            const int columns = 3;
-            const float rowHeight = 48f;
-            var cellWidth = (area.width - 36f) / columns;
-            for (var i = 0; i < SelectableSetCodes.Length; i++)
-            {
-                var setCode = SelectableSetCodes[i];
-                var column = i % columns;
-                var row = i / columns;
-                var wasSelected = selectedSets.Contains(setCode);
-                var cardCount = TcgCatalog.ForSet(setCode)
-                    .Count(card => card.ImplementationStatus == CardImplementationStatus.Complete);
-                var isSelected = DrawDeckPoolChoice(
-                    new Rect(area.x + 14f + column * cellWidth,
-                        area.y + 56f + row * rowHeight, cellWidth - 8f, 38f),
-                    wasSelected, $"{setCode}  ({cardCount})",
-                    new Color(0.12f, 0.64f, 0.96f));
-                if (isSelected != wasSelected)
-                {
-                    if (isSelected) selectedSets.Add(setCode);
-                    else selectedSets.Remove(setCode);
-                }
-            }
-
-            var civilizationY = area.y + 300f;
-            var sectionStyle = new GUIStyle(GUI.skin.label)
-            {
-                alignment = TextAnchor.MiddleLeft,
-                fontSize = 14,
-                fontStyle = FontStyle.Bold
-            };
-            GUI.Label(new Rect(area.x + 14f, civilizationY, area.width - 28f, 22f),
-                "CIVILIZATIONS", sectionStyle);
-            var civilizationCellWidth = (area.width - 28f) / SelectableCivilizations.Length;
-            for (var i = 0; i < SelectableCivilizations.Length; i++)
-            {
-                var civilization = SelectableCivilizations[i];
-                var wasSelected = selectedCivilizations.Contains(civilization);
-                var isSelected = DrawDeckPoolChoice(
-                    new Rect(area.x + 14f + i * civilizationCellWidth, civilizationY + 24f,
-                        civilizationCellWidth - 5f, 36f),
-                    wasSelected, civilization.ToString(), CivilizationColor(civilization));
-                if (isSelected != wasSelected)
-                {
-                    if (isSelected) selectedCivilizations.Add(civilization);
-                    else selectedCivilizations.Remove(civilization);
-                }
-            }
-
-            var selectedCards = TcgCatalog.Printings.Count(card =>
-                CardMatchesDeckPool(card, selectedSets, selectedCivilizations));
-            var uniqueNames = TcgCatalog.Printings.Where(card =>
-                    CardMatchesDeckPool(card, selectedSets, selectedCivilizations))
-                .Select(card => card.Name)
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .Count();
-            GUI.backgroundColor = new Color(0.14f, 0.17f, 0.22f);
-            GUI.Label(new Rect(area.x + 14f, civilizationY + 66f, area.width - 28f, 46f),
-                $"{selectedSets.Count} set(s) • {selectedCivilizations.Count} civilization(s)\n" +
-                $"{selectedCards} printings • {uniqueNames} card names");
-
-            var controlsY = area.yMax - 52f;
-            var buttonWidth = (area.width - 58f) * 0.25f;
-            if (GUI.Button(new Rect(area.x + 14f, controlsY, buttonWidth, 38f), "All Sets"))
-                foreach (var setCode in SelectableSetCodes) selectedSets.Add(setCode);
-            if (GUI.Button(new Rect(area.x + 20f + buttonWidth, controlsY, buttonWidth, 38f), "Clear Sets"))
-                selectedSets.Clear();
-            if (GUI.Button(new Rect(area.x + 26f + buttonWidth * 2f, controlsY, buttonWidth, 38f), "All Civs"))
-                foreach (var civilization in SelectableCivilizations)
-                    selectedCivilizations.Add(civilization);
-            if (GUI.Button(new Rect(area.x + 32f + buttonWidth * 3f, controlsY, buttonWidth, 38f), "Clear Civs"))
-                selectedCivilizations.Clear();
-        }
-
-        private static bool DrawDeckPoolChoice(
-            Rect rect,
-            bool selected,
-            string label,
-            Color accent)
-        {
-            var previousColor = GUI.color;
-            var previousBackground = GUI.backgroundColor;
-            var previousContent = GUI.contentColor;
-            var borderColor = selected
-                ? Color.Lerp(accent, Color.white, 0.34f)
-                : new Color(0.25f, 0.30f, 0.38f);
-            GUI.color = borderColor;
-            GUI.DrawTexture(rect, Texture2D.whiteTexture);
-
-            var buttonRect = new Rect(rect.x + 3f, rect.y + 3f,
-                rect.width - 6f, rect.height - 6f);
-            GUI.color = Color.white;
-            GUI.backgroundColor = selected
-                ? Color.Lerp(accent, new Color(0.04f, 0.06f, 0.09f), 0.42f)
-                : new Color(0.14f, 0.17f, 0.22f);
-            GUI.contentColor = Color.white;
-            var style = new GUIStyle(GUI.skin.button)
-            {
-                alignment = TextAnchor.MiddleCenter,
-                fontSize = selected ? 14 : 13,
-                fontStyle = selected ? FontStyle.Bold : FontStyle.Normal
-            };
-            style.normal.textColor = Color.white;
-            style.hover.textColor = Color.white;
-            style.active.textColor = Color.white;
-            style.focused.textColor = Color.white;
-            var clicked = GUI.Button(buttonRect,
-                selected ? $"✓  {label}" : label, style);
-
-            GUI.color = previousColor;
-            GUI.backgroundColor = previousBackground;
-            GUI.contentColor = previousContent;
-            return clicked ? !selected : selected;
-        }
-
-        private static int CountPlayableCardNames(
-            HashSet<string> selectedSets,
-            HashSet<Civilization> selectedCivilizations)
-        {
-            if (selectedSets.Count == 0 || selectedCivilizations.Count == 0) return 0;
-            return TcgCatalog.Printings.Where(card =>
-                    CardMatchesDeckPool(card, selectedSets, selectedCivilizations))
-                .Select(card => card.Name)
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .Count();
-        }
-
-        private static bool CardMatchesDeckPool(
-            CardDefinition card,
-            HashSet<string> selectedSets,
-            HashSet<Civilization> selectedCivilizations) =>
-            selectedSets.Contains(card.SetCode) &&
-            card.ImplementationStatus == CardImplementationStatus.Complete &&
-            card.Civilizations.Length > 0 &&
-            card.Civilizations.All(selectedCivilizations.Contains);
 
         private void StartSelectedMatch()
         {
+            if (_savedDecks == null) return;
+            EndDuelLog("New duel started");
             try
             {
                 StopAllCoroutines();
                 EndVideo();
+                _tutorial = null;
+                ResetDeckScreen();
                 _matchSeed = unchecked(Environment.TickCount * 397 ^ Guid.NewGuid().GetHashCode());
-                var humanSets = OrderedSelectedSets(_humanSelectedSets);
-                var computerSets = OrderedSelectedSets(_computerSelectedSets);
-                var humanCivilizations = OrderedSelectedCivilizations(_humanSelectedCivilizations);
-                var computerCivilizations = OrderedSelectedCivilizations(_computerSelectedCivilizations);
-                var humanDeck = TcgCatalog.BuildRandomDeckFromSets(
-                    humanSets, humanCivilizations, unchecked(_matchSeed ^ 0x5f3759df));
+                var random = new System.Random(unchecked(_matchSeed ^ 0x5f3759df));
+                var computerCivilization = SelectableCivilizations[random.Next(SelectableCivilizations.Length)];
+                var humanDeck = _savedDecks.SelectedDeck.Build();
                 var computerDeck = TcgCatalog.BuildRandomDeckFromSets(
-                    computerSets, computerCivilizations, unchecked(_matchSeed ^ (int)0x9e3779b9));
+                    SelectableSetCodes, new[] { computerCivilization }, random.Next());
 
                 _actionSession = null;
                 _inspectionReview = null;
@@ -448,12 +257,13 @@ namespace CardGame.Presentation
                 _actionDepth = 0;
                 _engine = new RulesEngine();
                 _state = _engine.StartGame(humanDeck, computerDeck, _matchSeed, HumanId);
-                _humanDeckLabel = FormatSetSelection(humanSets);
-                _computerDeckLabel = FormatSetSelection(computerSets);
-                _humanCivilizationLabel = FormatCivilizationSelection(humanCivilizations);
-                _computerCivilizationLabel = FormatCivilizationSelection(computerCivilizations);
+                _humanDeckLabel = _savedDecks.SelectedDeck.Name;
+                _computerDeckLabel = "Random " + computerCivilization + " deck";
+                _humanCivilizationLabel = FormatCivilizationSelection(humanDeck
+                    .SelectMany(card => card.Civilizations).Distinct().OrderBy(civilization => civilization).ToArray());
+                _computerCivilizationLabel = computerCivilization.ToString();
                 _message = "Choose a card, charge mana, and play a card.";
-                _setupMessage = "Choose one or more sets and civilizations for each deck pool.";
+                _setupMessage = "Your saved duel deck: " + _savedDecks.SelectedDeck.Name;
                 _busy = false;
                 _awaitingHumanBlock = false;
                 _showDeckSetup = false;
@@ -472,28 +282,18 @@ namespace CardGame.Presentation
                 _manaSelectionScroll = Vector2.zero;
                 _battleActionScroll = Vector2.zero;
                 _controlPanelScroll = Vector2.zero;
+                BeginDuelLog();
                 _artRequests.Clear();
                 StartCoroutine(PreloadDeckArt(humanDeck.Concat(computerDeck).ToArray()));
             }
-            catch (Exception exception)
+            catch (Exception exception) when (exception is ArgumentException || exception is InvalidOperationException)
             {
                 _state = null;
+                _tutorial = null;
                 _showDeckSetup = true;
                 _setupMessage = exception.Message;
+                Debug.LogError("Could not start duel: " + exception.Message);
             }
-        }
-
-        private static string[] OrderedSelectedSets(HashSet<string> selectedSets) =>
-            SelectableSetCodes.Where(selectedSets.Contains).ToArray();
-
-        private static Civilization[] OrderedSelectedCivilizations(
-            HashSet<Civilization> selectedCivilizations) =>
-            SelectableCivilizations.Where(selectedCivilizations.Contains).ToArray();
-
-        private static string FormatSetSelection(IReadOnlyCollection<string> sets)
-        {
-            if (sets.Count == SelectableSetCodes.Length) return "All TCG sets";
-            return sets.Count <= 4 ? string.Join(", ", sets) : $"{sets.Count} selected sets";
         }
 
         private static string FormatCivilizationSelection(IReadOnlyCollection<Civilization> civilizations)
@@ -506,9 +306,16 @@ namespace CardGame.Presentation
 
         private void ReturnToDeckSetup()
         {
+            EndDuelLog("Returned to menu");
             StopAllCoroutines();
             EndVideo();
             _state = null;
+            _tutorial = null;
+            _actionSession = null;
+            _inspectionReview = null;
+            _shownAbilityChoice = null;
+            _actionDepth = 0;
+            _resolvingComputerTriggers = false;
             _busy = false;
             _awaitingHumanBlock = false;
             _showHandCardViewer = false;
@@ -517,7 +324,13 @@ namespace CardGame.Presentation
             _selectedCreature = null;
             _selectedOpponentCreature = null;
             _showDeckSetup = true;
-            _setupMessage = "Change either set/civilization pool, then build two newly randomized decks.";
+            PCancelGesture();
+            PClosePreview();
+            ResetDeckScreen();
+            _setupMessage = _savedDecks == null
+                ? _setupMessage
+                : "Your saved duel deck: " + _savedDecks.SelectedDeck.Name;
+            _portraitDirty = true;
         }
 
         private void DrawHeader()
@@ -974,7 +787,7 @@ namespace CardGame.Presentation
                 .Where(card => _state.Players[HumanId].Hand.Contains(card)).ToArray();
 
             var estimatedHeight = 38f +
-                                  PanelTextHeight($"Your pool: {_humanDeckLabel} • {_humanCivilizationLabel}",
+                                  PanelTextHeight($"Your deck: {_humanDeckLabel} • {_humanCivilizationLabel}",
                                       wrapStyle, contentWidth) +
                                   PanelTextHeight($"Computer: {_computerDeckLabel} • {_computerCivilizationLabel}",
                                       wrapStyle, contentWidth) + 18f;
@@ -1049,7 +862,7 @@ namespace CardGame.Presentation
             var y = 0f;
             DrawPanelLabel(ref y, contentWidth, "DUEL CONTROLS", panelHeadingStyle, 28f, 2f);
             DrawPanelLabel(ref y, contentWidth,
-                $"Your pool: {_humanDeckLabel} • {_humanCivilizationLabel}", wrapStyle, 22f, 2f);
+                $"Your deck: {_humanDeckLabel} • {_humanCivilizationLabel}", wrapStyle, 22f, 2f);
             DrawPanelLabel(ref y, contentWidth,
                 $"Computer: {_computerDeckLabel} • {_computerCivilizationLabel}", wrapStyle, 22f, 8f);
 
@@ -1086,15 +899,20 @@ namespace CardGame.Presentation
                     else
                     {
                         GUI.enabled = !_busy && _engine.ValidateAttack(_state, HumanId,
-                            selectedCreature.InstanceId, AttackTargetKind.Player).Success;
+                            selectedCreature.InstanceId, AttackTargetKind.Player).Success &&
+                            TutorialAllowsAttack(selectedCreature, AttackTargetKind.Player);
                         if (DrawPanelButton(ref y, contentWidth, "Attack Player", 38f, 6f))
                             StartHumanAttack(AttackTargetKind.Player, 0);
 
                         GUI.enabled = !_busy && !_state.IsFinished && _state.ActivePlayerId == HumanId;
                         foreach (var target in legalCreatureTargets)
+                        {
+                            GUI.enabled = !_busy && TutorialAllowsAttack(selectedCreature,
+                                AttackTargetKind.Creature, target.InstanceId);
                             if (DrawPanelButton(ref y, contentWidth,
                                     $"Attack {target.Definition.Name} — {_engine.CurrentPower(_state, target)}", 40f, 6f))
                                 StartHumanAttack(AttackTargetKind.Creature, target.InstanceId);
+                        }
 
                         if (readyBlockers > 0)
                             DrawPanelLabel(ref y, contentWidth,
@@ -1108,6 +926,8 @@ namespace CardGame.Presentation
                     }
                 }
 
+                GUI.enabled = !_busy && !_state.IsFinished && _state.ActivePlayerId == HumanId &&
+                    TutorialAllows(TutorialAction.EndTurn);
                 if (DrawPanelButton(ref y, contentWidth, "End Turn", 38f, 6f)) EndHumanTurn();
                 GUI.enabled = true;
 
@@ -1175,6 +995,7 @@ namespace CardGame.Presentation
 
         private void OpenHandCardViewer(CardInstance card)
         {
+            _tutorial?.InspectCard(_state, card.InstanceId);
             _selectedHand = card;
             _selectedCreature = null;
             _showHandCardViewer = true;
@@ -1191,6 +1012,7 @@ namespace CardGame.Presentation
 
         private void OpenFaceUpCardViewer(CardInstance card, IReadOnlyList<CardInstance> cards, string zoneName)
         {
+            _tutorial?.InspectCard(_state, card.InstanceId);
             _selectedHand = card;
             _viewerCards = cards;
             _viewerZoneName = zoneName;
@@ -1323,9 +1145,10 @@ namespace CardGame.Presentation
             else if (_viewerAllowsHandActions)
             {
                 var canAct = !_busy && !_state.IsFinished && _state.ActivePlayerId == HumanId;
-                GUI.enabled = canAct;
+                GUI.enabled = canAct && TutorialAllows(TutorialAction.ChargeMana, _selectedHand.InstanceId);
                 if (GUI.Button(new Rect(infoRect.x, infoRect.yMax - 74f, infoRect.width * 0.47f, 58f), "Mana Zone"))
                     ChargeSelected();
+                GUI.enabled = canAct && TutorialAllows(TutorialAction.PlayCard, _selectedHand.InstanceId);
                 if (GUI.Button(new Rect(infoRect.x + infoRect.width * 0.53f, infoRect.yMax - 74f, infoRect.width * 0.47f, 58f), "Battle Zone"))
                     BeginManaPayment();
                 GUI.enabled = true;
@@ -1409,7 +1232,7 @@ namespace CardGame.Presentation
                 actionCount * (buttonWidth + 10f)), buttonHeight);
             _battleActionScroll = GUI.BeginScrollView(viewport, _battleActionScroll, content);
             var x = 0f;
-            GUI.enabled = canUseControls && canAttackPlayer;
+            GUI.enabled = canUseControls && canAttackPlayer && TutorialAllowsAttack(attacker, AttackTargetKind.Player);
             if (canAttackPlayer && GUI.Button(new Rect(x, 0f, buttonWidth, buttonHeight), "Attack Player"))
             {
                 _selectedCreature = attacker;
@@ -1420,6 +1243,7 @@ namespace CardGame.Presentation
             GUI.enabled = canUseControls;
             foreach (var target in legalTargets)
             {
+                GUI.enabled = canUseControls && TutorialAllowsAttack(attacker, AttackTargetKind.Creature, target.InstanceId);
                 if (GUI.Button(new Rect(x, 0f, buttonWidth, buttonHeight),
                         $"Attack {target.Definition.Name}"))
                 {
@@ -1434,7 +1258,7 @@ namespace CardGame.Presentation
             var noteTop = area.y + 108f;
             if (_engine.HasTapAbility(_state, attacker))
             {
-                GUI.enabled = canUseControls && canUseTapAbility;
+                GUI.enabled = canUseControls && canUseTapAbility && TutorialAllows(TutorialAction.TapAbility, attacker.InstanceId);
                 GUI.backgroundColor = new Color(0.30f, 0.58f, 0.36f);
                 if (GUI.Button(new Rect(area.x + 10f, noteTop,
                         area.width - 20f, 46f), "Use Tap Ability — Instead of Attacking"))
@@ -1458,6 +1282,7 @@ namespace CardGame.Presentation
 
         private void BeginManaPayment()
         {
+            if (!TutorialGuard(TutorialAction.PlayCard, _selectedHand.InstanceId)) return;
             _selectedManaIds.Clear();
             _selectingManaPayment = true;
             _viewerMessage = $"Select {ManaCostText(_selectedHand)} untapped mana cards. Ability choices follow confirmation.";
@@ -1524,6 +1349,7 @@ namespace CardGame.Presentation
         private void ConfirmManualPlay()
         {
             var card = _selectedHand;
+            if (!TutorialGuard(TutorialAction.PlayCard, card.InstanceId)) return;
             var payment = _selectedManaIds.ToArray();
             QueueAction((engine, state) => card.Definition.Type == CardType.Spell
                 ? engine.CastSpell(state, HumanId, card.InstanceId, payment)
@@ -1534,6 +1360,7 @@ namespace CardGame.Presentation
         private void ChargeSelected()
         {
             var card = _selectedHand;
+            if (!TutorialGuard(TutorialAction.ChargeMana, card.InstanceId)) return;
             QueueAction((engine, state) => engine.ChargeMana(state, HumanId, card.InstanceId),
                 result => ShowResult(result, result.Success ? $"Charged {card.Definition.Name} as mana." : null));
         }
@@ -1542,6 +1369,8 @@ namespace CardGame.Presentation
         {
             var attacker = _selectedCreature;
             if (attacker == null) return false;
+            if (!TutorialGuard(kind == AttackTargetKind.Player ? TutorialAction.AttackPlayer :
+                TutorialAction.AttackCreature, attacker.InstanceId, targetId)) return false;
             QueueAction((engine, state) => engine.DeclareAttack(state, HumanId, attacker.InstanceId, kind, targetId),
                 result =>
                 {
@@ -1557,7 +1386,7 @@ namespace CardGame.Presentation
         {
             if (_state.PendingAttack != null)
             {
-                yield return PlayAttackVideo(attacker);
+                if (_tutorial == null) yield return PlayAttackVideo(attacker);
                 var blockers = EligibleBlockers(_state.Players[ComputerId]).ToList();
                 var blockerId = blockers.OrderBy(card => _engine.CurrentPower(_state, card))
                     .Select(card => card.InstanceId).FirstOrDefault();
@@ -1572,10 +1401,12 @@ namespace CardGame.Presentation
 
         private void EndHumanTurn()
         {
+            if (!TutorialGuard(TutorialAction.EndTurn)) return;
             QueueAction((engine, state) => engine.EndTurn(state, HumanId), result =>
             {
                 ShowResult(result, result.Success ? "Computer is thinking…" : null);
-                if (result.Success && !_state.IsFinished) StartCoroutine(RunComputerTurn());
+                if (result.Success && !_state.IsFinished)
+                    StartCoroutine(_tutorial == null ? RunComputerTurn() : RunTutorialOpponentTurn());
             });
         }
 
@@ -1700,6 +1531,8 @@ namespace CardGame.Presentation
         private IEnumerator RunAction(Func<RulesEngine, GameState, RuleResult> command,
             Action<RuleResult> completed = null)
         {
+            if (_duelLog == null) BeginDuelLog();
+            var before = _state;
             _actionDepth++;
             CloseHandCardViewer();
             var inspectedBefore = string.Join(",", _state.InspectedCards.Select(c =>
@@ -1708,6 +1541,7 @@ namespace CardGame.Presentation
             _actionSession = session;
             while (!session.IsComplete) yield return null;
             _state = session.State;
+            RecordDuelAction(before, session);
             _selectedHand = null;
             _selectedCreature = null;
             _selectedOpponentCreature = null;
@@ -1725,6 +1559,7 @@ namespace CardGame.Presentation
                 _state.PendingShieldTriggers.Any(c => _state.Players[ComputerId].Hand.Contains(c)))
                 yield return ResolveComputerShieldTriggers();
             _actionDepth--;
+            _tutorial?.Observe(before, _state, session.Result);
             completed?.Invoke(session.Result);
         }
 
@@ -1894,7 +1729,8 @@ namespace CardGame.Presentation
             GUI.color = new Color(0, 0, 0, 0.82f);
             GUI.Box(new Rect(0, 0, _uiWidth, _uiHeight), GUIContent.none);
             GUI.color = Color.white;
-            var text = _state.WinnerPlayerId == HumanId ? "YOU WIN" : "COMPUTER WINS";
+            var text = _tutorial != null ? (_state.WinnerPlayerId == HumanId ? "TUTORIAL COMPLETE" : "TRY AGAIN") :
+                _state.WinnerPlayerId == HumanId ? "YOU WIN" : "COMPUTER WINS";
             var titleStyle = new GUIStyle(GUI.skin.label)
             {
                 alignment = TextAnchor.MiddleCenter,
@@ -1909,9 +1745,21 @@ namespace CardGame.Presentation
             GUI.Label(new Rect(_uiWidth / 2f - 220f, _uiHeight / 2f - 90f, 440f, 52f), text, titleStyle);
             GUI.Label(new Rect(_uiWidth / 2f - 220f, _uiHeight / 2f - 32f, 440f, 40f),
                 _state.WinReason, bodyStyle);
+            GUI.enabled = _tutorial == null || _savedDecks != null;
             if (GUI.Button(new Rect(_uiWidth / 2f - 155f, _uiHeight / 2f + 32f, 310f, 58f),
-                    "NEW DUEL / CHANGE SETS"))
-                ReturnToDeckSetup();
+                    _tutorial == null ? "NEW DUEL / CHANGE SETS" : "START NEW GAME"))
+            {
+                if (_tutorial == null) ReturnToDeckSetup();
+                else StartSelectedMatch();
+            }
+            GUI.enabled = true;
+            if (_tutorial != null)
+            {
+                if (GUI.Button(new Rect(_uiWidth / 2f - 155f, _uiHeight / 2f + 104f, 310f, 48f),
+                    "REPLAY TUTORIAL")) StartTutorial();
+                if (GUI.Button(new Rect(_uiWidth / 2f - 155f, _uiHeight / 2f + 166f, 310f, 48f),
+                    "MAIN MENU")) ReturnToDeckSetup();
+            }
         }
 
         private string ManaCostText(CardInstance card)
@@ -1932,6 +1780,7 @@ namespace CardGame.Presentation
         private void ShowResult(RuleResult result, string successMessage = null)
         {
             _message = result.Success ? successMessage ?? "Action resolved." : result.Error;
+            if (_duelLogError.Length > 0) _message += "\n" + _duelLogError;
         }
 
         private static Color CivilizationColor(CardDefinition card)
@@ -1962,7 +1811,9 @@ namespace CardGame.Presentation
 
         private void OnDestroy()
         {
+            EndDuelLog("Controller destroyed");
             DisposePortraitInterface();
+            ReleaseDeckArt(Array.Empty<string>());
             if (_videoTexture != null) _videoTexture.Release();
             foreach (var turned in _turnedCardArt.Values)
                 if (turned != null) turned.Release();

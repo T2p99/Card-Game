@@ -39,14 +39,15 @@ namespace CardGame.Presentation
         private string _portraitPreviewZone;
         private string _portraitModal;
         private bool _portraitManualMana, _portraitRules;
-        private float _portraitRowOffset, _portraitOpponentRowOffset, _portraitHandOffset;
+        private float _portraitRowOffset, _portraitOpponentRowOffset;
+        private float _portraitHandOffset = .5f;
         private float _portraitManaRowOffset, _portraitOpponentManaRowOffset;
         private long _portraitPaymentCard;
         private readonly HashSet<long> _portraitManaIds = new HashSet<long>();
         private AbilityChoice _portraitChoice;
         private readonly List<long> _portraitChoiceIds = new List<long>();
         private int _portraitNumber;
-        private float _portraitChoiceOffset = 1f, _portraitManaOffset = 1f, _portraitSetupOffset = 1f;
+        private float _portraitChoiceOffset = 1f, _portraitManaOffset = 1f;
         private Text _portraitStatus;
         private readonly List<PortraitArt> _portraitArt = new List<PortraitArt>();
         private Rect _portraitLastSafe;
@@ -166,38 +167,64 @@ namespace CardGame.Presentation
             _portraitStatus = null;
             if (_showDeckSetup || _state == null) { PSetup(); return; }
             PDrawTable();
-            if (_showVideo) { PVideo(); return; }
-            if (_inspectionReview != null || _actionDepth > 0) { PChoice(); return; }
-            if (_state.IsFinished) { PWinner(); return; }
-            if (_awaitingHumanBlock) { PBlockChoice(); return; }
-            var shieldTriggers = _state.PendingShieldTriggers.Where(c => _state.Players[HumanId].Hand.Contains(c)).ToList();
-            if (shieldTriggers.Count > 0)
+            if (_showVideo) PVideo();
+            else if (_inspectionReview != null || _actionDepth > 0) PChoice();
+            else if (_state.IsFinished) PWinner();
+            else if (_awaitingHumanBlock) PBlockChoice();
+            else
             {
-                if (_portraitPreview == null || !_portraitPreview.Any(c => shieldTriggers.Contains(c)))
-                    POpenPreview(shieldTriggers, 0, "Shield Trigger");
+                var shieldTriggers = _state.PendingShieldTriggers.Where(c => _state.Players[HumanId].Hand.Contains(c)).ToList();
+                if (shieldTriggers.Count > 0)
+                {
+                    if (_portraitPreview == null || !_portraitPreview.Any(c => shieldTriggers.Contains(c)))
+                        POpenPreview(shieldTriggers, 0, "Shield Trigger");
+                }
+                if (_portraitModal != null) PMenu();
+                else if (_portraitPreview != null) PPreview();
+                else PEndTurnOverlay();
             }
-            if (_portraitModal != null) PMenu();
-            else if (_portraitPreview != null) PPreview();
+            PDrawTutorialCoach();
         }
 
         private void PDrawTable()
         {
-            var field = _ph - 132f;
-            var split = 64f + field * .40f;
-            PBox(_portraitBoard, "Opponent table", new Rect(6, 68, _pw - 12, split - 68), new Color(.055f, .115f, .155f));
+            var top = 64f + (_tutorial == null ? 0 : TutorialCoachHeight);
+            var field = _ph - 68f - top;
+            var split = top + field * .40f;
+            PBox(_portraitBoard, "Opponent table", new Rect(6, top + 4, _pw - 12, split - top - 4), new Color(.055f, .115f, .155f));
             PBox(_portraitBoard, "Your table", new Rect(6, split + 6, _pw - 12, _ph - split - 76), new Color(.075f, .16f, .175f));
             PBox(_portraitBoard, "Battle line", new Rect(26, split, _pw - 52, 2), new Color(.65f, .52f, .28f, .7f));
-            PLabel(_portraitBoard, new Rect(24, 8, 190, 44), "DUEL MASTERS", 24, PGold, TextAnchor.MiddleLeft);
-            PLabel(_portraitBoard, new Rect(220, 8, _pw - 484, 44),
+            PLabel(_portraitBoard, new Rect(104, 4, _pw - 208, 30), "DUEL MASTERS", 24, PGold);
+            PLabel(_portraitBoard, new Rect(104, 34, _pw - 208, 26),
                 "TURN " + _state.TurnNumber + (_state.ActivePlayerId == HumanId ? "  ·  YOUR TURN" : "  ·  OPPONENT"),
                 19, Color.white);
             PButton(_portraitBoard, new Rect(_pw - 94, 10, 74, 44), "☰", () => { _portraitModal = "menu"; _portraitDirty = true; });
-            PDrawSide(_state.Players[ComputerId], 64, field * .40f, true);
+            PDrawSide(_state.Players[ComputerId], top, field * .40f, true);
             PDrawSide(_state.Players[HumanId], split + 6, field * .60f - 6, false);
-            var canEnd = PCanAct && _state.PendingShieldTriggers.Count == 0;
-            PButton(_portraitBoard, new Rect(_pw - 256, 8, 152, 44), "END TURN", () => EndHumanTurn(), canEnd, PGold);
             _portraitStatus = PLabel(_portraitBoard, new Rect(20, _ph - 64, _pw - 40, 56), _message, 21,
                 new Color(.75f, .85f, .88f));
+        }
+
+        private void PEndTurnOverlay()
+        {
+            const float width = 88, height = 96;
+            var canEnd = PCanAct && _state.PendingShieldTriggers.Count == 0 && TutorialAllows(TutorialAction.EndTurn);
+            var centerY = _ph * .5f;
+            if (_tutorial != null)
+                centerY = 64 + TutorialCoachHeight + (_ph - 132 - TutorialCoachHeight) * .40f + 76;
+            var button = PButton(_portraitOverlay, new Rect(_pw - width - 12,
+                    centerY - height * .5f, width, height),
+                "END TURN", EndHumanTurn, canEnd, PGold);
+            PTutorialHighlight((RectTransform)button.transform, _tutorial?.Focus == TutorialFocus.EndTurn);
+            var label = button.GetComponentInChildren<Text>();
+            label.fontSize = 18;
+            label.rectTransform.anchoredPosition = new Vector2(4, -46);
+            label.rectTransform.sizeDelta = new Vector2(width - 8, 44);
+            var icon = PRect(button.transform, "End turn icon", new Rect((width - 44) * .5f, 8, 44, 32));
+            var arrow = icon.gameObject.AddComponent<PortraitAttackArrow>();
+            arrow.color = PInk; arrow.raycastTarget = false;
+            arrow.SetPoints(new Vector2(0, -16), new Vector2(36, -16));
+            PBox(icon, "Turn end bar", new Rect(40, 2, 4, 28), PInk).raycastTarget = false;
         }
 
         private void PDrawSide(PlayerState player, float y, float height, bool opponent)
@@ -206,21 +233,33 @@ namespace CardGame.Presentation
             var manaY = opponent ? y + height * .42f : y + height * .31f;
             var shieldsY = opponent ? y + height * .25f : y + height * .52f;
             var handY = opponent ? y + 12 : y + height * .74f;
+            if (_tutorial != null)
+            {
+                var extra = Mathf.Max(0, height - 568);
+                battleY = opponent ? y + height - 156 : y + 6;
+                manaY = opponent ? y + 152 : y + 172 + extra * .2f;
+                shieldsY = opponent ? y + 80 : y + 312 + extra * .5f;
+                handY = opponent ? y + 4 : y + 386 + extra;
+            }
             PAvatar(player, new Rect(opponent ? 18 : _pw - 104, handY + (opponent ? 2 : 44), 86, 86), opponent);
             if (opponent)
             {
                 var count = Math.Min(player.Hand.Count, 9);
+                var start = (_pw - ((count - 1) * 28 + 52)) * .5f;
                 for (var i = 0; i < count; i++)
-                    PCard(_portraitBoard, null, new Rect(_pw * .5f - count * 14 + i * 28, handY, 52, 72), true);
-                PLabel(_portraitBoard, new Rect(122, handY + 74, _pw - 244, 28), "OPPONENT HAND · " + player.Hand.Count, 20, new Color(.62f, .73f, .78f));
+                    PCard(_portraitBoard, null, new Rect(start + i * 28, handY, 52, 72), true);
+                PLabel(_portraitBoard, _tutorial == null
+                        ? new Rect(122, handY + 74, _pw - 244, 28) : new Rect(110, handY + 12, 144, 48),
+                    "OPPONENT HAND · " + player.Hand.Count, _tutorial == null ? 20 : 17, new Color(.62f, .73f, .78f));
             }
-            else PHand(player.Hand, new Rect(12, handY, _pw - 126, Mathf.Max(130, height * .25f)));
-            PShieldRow(player, new Rect(120, shieldsY, _pw - 240, opponent ? 64 : 92), opponent);
-            PManaRow(player, new Rect(110, manaY, _pw - 220, opponent ? 94 : 122), opponent);
+            else PHand(player.Hand, new Rect(110, handY, _pw - 220, _tutorial == null ? Mathf.Max(130, height * .25f) : 180));
+            PShieldRow(player, new Rect(120, shieldsY, _pw - 240, opponent ? 64 : _tutorial == null ? 92 : 60), opponent);
+            PManaRow(player, new Rect(110, manaY, _pw - 220, opponent ? _tutorial == null ? 94 : 74 : 122), opponent);
             PZoneStack(player.Graveyard, new Rect(14, battleY + 28, 76, 104), "Graveyard", false,
                 () => POpenZone(player.Graveyard, opponent ? "Opponent graveyard" : "Your graveyard"));
-            PZoneStack(player.Deck, new Rect(_pw - 90, battleY + 28, 76, 104), "DECK", true,
-                () => { _message = (opponent ? "Opponent" : "Your") + " deck: " + player.Deck.Count + " cards."; });
+            var deckY = opponent ? battleY + 28 : Mathf.Max(battleY + 164, _ph * .5f + 60);
+            PZoneStack(player.Deck, new Rect(_pw - 90, deckY, 76, 104), "DECK", true,
+                () => TutorialInspectDeck(player.PlayerId));
             PBattleRow(player, new Rect(104, battleY, _pw - 208, 156), opponent);
         }
 
@@ -252,17 +291,22 @@ namespace CardGame.Presentation
                     POrientCard(rect, new Vector2(area.width * .5f + (i % 2 == 0 ? -2 : 2), -area.height * .5f - i), angle);
                 }
             }
-            PLabel(pile, new Rect(0, area.height - 30, area.width, 30), cards.Count.ToString(), 24, Color.white, TextAnchor.MiddleCenter, true);
+            PLabel(pile, new Rect(0, area.height - 30, area.width, 30), cards.Count.ToString(), 24, Color.white, true);
             PLabel(_portraitBoard, new Rect(Mathf.Clamp(area.x - 20, 2, _pw - area.width - 42), area.y + area.height + 8, area.width + 40, 28), label, 20, new Color(.76f, .86f, .88f));
+            PTutorialHighlight(pile,
+                _tutorial?.Focus == TutorialFocus.Deck && ReferenceEquals(cards, _state.Players[HumanId].Deck) ||
+                _tutorial?.Focus == TutorialFocus.Graveyard && ReferenceEquals(cards, _state.Players[HumanId].Graveyard) ||
+                _tutorial?.Focus == TutorialFocus.OpponentGraveyard && ReferenceEquals(cards, _state.Players[ComputerId].Graveyard));
             pile.gameObject.AddComponent<PortraitPointer>().Tap = _ => { tap(); _portraitDirty = true; };
         }
 
         private void PManaRow(PlayerState player, Rect area, bool opponent)
         {
             var panel = PBox(_portraitBoard, opponent ? "Opponent mana row" : "Your mana row", area, new Color(.075f, .18f, .20f)).rectTransform;
+            PTutorialHighlight(panel, !opponent && _tutorial?.Focus == TutorialFocus.Mana);
             PLabel(panel, new Rect(8, 0, area.width - 16, 26),
                 "MANA · " + player.Mana.Count(c => !c.Tapped) + " / " + player.Mana.Count + " READY", 21, new Color(.76f, .88f, .88f));
-            var cardHeight = opponent ? 60f : 86f;
+            var cardHeight = opponent ? _tutorial == null ? 60f : 40f : 86f;
             var cardWidth = cardHeight * 491f / 682f;
             var stride = cardHeight + 14;
             var viewport = new Rect(6, 28, area.width - 12, area.height - 30);
@@ -297,6 +341,8 @@ namespace CardGame.Presentation
             if (n == 0) { PLabel(_portraitBoard, area, "NO SHIELDS", 18, new Color(.48f, .64f, .70f)); return; }
             var width = Mathf.Min(58, (area.width - 8 * (Math.Min(n, 5) - 1)) / Math.Min(n, 5));
             var scroll = PScroll(_portraitBoard, area, true, Math.Max(area.width, n * (width + 9)));
+            PTutorialHighlight(scroll.viewport, _tutorial?.Focus ==
+                (opponent ? TutorialFocus.OpponentShields : TutorialFocus.YourShields));
             var start = n <= 5 ? (area.width - n * (width + 9) + 9) * .5f : 0;
             for (var i = 0; i < n; i++)
             {
@@ -323,6 +369,8 @@ namespace CardGame.Presentation
             const float slotWidth = 132f;
             var contentWidth = Mathf.Max(area.width, player.BattleZone.Count * stride - 10);
             var scroll = PScroll(_portraitBoard, area, true, contentWidth);
+            PTutorialHighlight(scroll.viewport, _tutorial?.Focus ==
+                (opponent ? TutorialFocus.OpponentBattle : TutorialFocus.Battle));
             scroll.horizontalNormalizedPosition = opponent ? _portraitOpponentRowOffset : _portraitRowOffset;
             scroll.onValueChanged.AddListener(v => { if (opponent) _portraitOpponentRowOffset = v.x; else _portraitRowOffset = v.x; });
             var start = Math.Max(0, (area.width - player.BattleZone.Count * stride + 10) * .5f);
@@ -333,9 +381,9 @@ namespace CardGame.Presentation
                 var rect = PCard(slot, card, new Rect(0, 0, 96, 126));
                 POrientCard(rect, new Vector2(slotWidth * .5f, -91), card.Tapped ? -90 : 0);
                 PLabel(slot, new Rect(0, 0, slotWidth, 28), _engine.CurrentPower(_state, card).ToString(),
-                    26, PGold, TextAnchor.MiddleCenter, true);
+                    26, PGold, true);
                 if (_engine.CurrentPower(_state, card, true) != _engine.CurrentPower(_state, card))
-                    PLabel(slot, new Rect(0, 132, slotWidth, 24), "ATK " + _engine.CurrentPower(_state, card, true), 18, PGold, TextAnchor.MiddleCenter, true);
+                    PLabel(slot, new Rect(0, 132, slotWidth, 24), "ATK " + _engine.CurrentPower(_state, card, true), 18, PGold, true);
                 if (opponent) _portraitTargets.Add(new PortraitTarget { Rect = rect, Border = rect.GetComponent<Image>(), Id = card.InstanceId, Kind = "creature" });
                 PAttachCardInput(rect, card, player.BattleZone, opponent ? "Opponent battle zone" : "Your battle zone", false, !opponent, scroll);
             }
@@ -344,24 +392,26 @@ namespace CardGame.Presentation
         private void PHand(List<CardInstance> cards, Rect area)
         {
             var stride = cards.Count <= 1 ? 0 : Mathf.Clamp((area.width - 114) / (cards.Count - 1), 36, 80);
-            var width = Mathf.Max(area.width, (cards.Count - 1) * stride + 114);
+            var span = cards.Count == 0 ? 0 : (cards.Count - 1) * stride + 114;
+            var width = Mathf.Max(area.width, span);
             var scroll = PScroll(_portraitBoard, area, true, width);
             scroll.horizontalNormalizedPosition = _portraitHandOffset;
-            scroll.onValueChanged.AddListener(v => _portraitHandOffset = v.x);
-            var start = Mathf.Max(0, (area.width - (cards.Count - 1) * stride - 114) * .5f);
+            scroll.onValueChanged.AddListener(v => { if (width > area.width) _portraitHandOffset = v.x; });
+            var start = (width - span) * .5f;
             for (var i = 0; i < cards.Count; i++)
             {
                 var card = cards[i];
                 var t = cards.Count <= 1 ? 0 : (i / (float)(cards.Count - 1) - .5f);
-                var rect = PCard(scroll.content, card, new Rect(start + i * stride, 17 + 16 * Mathf.Abs(t), 114, 158));
-                rect.localRotation = Quaternion.Euler(0, 0, -t * 13);
+                var rect = PCard(scroll.content, card, new Rect(0, 0, 114, 158));
+                POrientCard(rect, new Vector2(start + i * stride + 57, -96 - 16 * Mathf.Abs(t)), -t * 13);
                 _portraitHandCards[card.InstanceId] = rect;
                 PAttachCardInput(rect, card, cards, "Your hand", true, false, scroll);
             }
             PLabel(_portraitBoard, new Rect(area.x, area.y - 12, area.width, 28), "HAND · " + cards.Count + "   TAP TO VIEW · HOLD TO BROWSE", 18, new Color(.59f, .75f, .78f));
         }
 
-        private RectTransform PCard(Transform parent, CardInstance card, Rect area, bool hidden = false)
+        private RectTransform PCard(Transform parent, CardInstance card, Rect area, bool hidden = false,
+            bool showManaCost = true)
         {
             var frame = PBox(parent, hidden || card == null ? "Hidden card" : card.Definition.Name, area,
                 card != null && !hidden ? CivilizationColor(card.Definition) : new Color(.12f, .23f, .30f));
@@ -381,11 +431,14 @@ namespace CardGame.Presentation
                 if (art.texture == null)
                     fallback = PLabel(frame.transform, new Rect(7, 14, area.width - 14, area.height - 28), card.Definition.Name, area.width > 200 ? 24 : 14, Color.white).gameObject;
                 _portraitArt.Add(new PortraitArt { Image = art, Id = card.Definition.Id, Fallback = fallback });
-                PLabel(frame.transform, new Rect(3, 3, Mathf.Max(24, area.width * .22f), Mathf.Max(24, area.width * .22f)),
-                    (_state != null && _engine != null ? _engine.MinimumManaCost(_state, card) : card.Definition.Cost).ToString(),
-                    area.width > 200 ? 28 : 17, Color.white, TextAnchor.MiddleCenter, true);
+                PTutorialHighlight(frame.rectTransform, _tutorial != null &&
+                    (card.InstanceId == _tutorial.FocusCardId || card.InstanceId == _tutorial.TargetCardId));
+                if (showManaCost)
+                    PLabel(frame.transform, new Rect(3, 3, Mathf.Max(24, area.width * .22f), Mathf.Max(24, area.width * .22f)),
+                        (_state != null && _engine != null ? _engine.MinimumManaCost(_state, card) : card.Definition.Cost).ToString(),
+                        area.width > 200 ? 28 : 17, Color.white, true);
                 if (card.EvolutionMaterials.Count > 0)
-                    PLabel(frame.transform, new Rect(0, area.height - 24, area.width, 22), "+" + PCountMaterials(card) + " UNDER", 13, PCyan, TextAnchor.MiddleCenter, true);
+                    PLabel(frame.transform, new Rect(0, area.height - 24, area.width, 22), "+" + PCountMaterials(card) + " UNDER", 13, PCyan, true);
             }
             return frame.rectTransform;
         }
@@ -413,8 +466,10 @@ namespace CardGame.Presentation
                 var delta = (pos - _portraitPress) / _portraitCanvas.scaleFactor;
                 if (hand && _portraitScrubbing) PHighlightHand(pos);
                 else if (battle && !_portraitScrolling && PCanAct &&
-                    (_engine.ValidateAttack(_state, HumanId, card.InstanceId, AttackTargetKind.Player).Success ||
-                     _engine.GetAttackTargetCandidates(_state, HumanId, card.InstanceId).Count > 0) &&
+                    (_engine.ValidateAttack(_state, HumanId, card.InstanceId, AttackTargetKind.Player).Success &&
+                     TutorialAllowsAttack(card, AttackTargetKind.Player) ||
+                     _engine.GetAttackTargetCandidates(_state, HumanId, card.InstanceId)
+                         .Any(target => TutorialAllowsAttack(card, AttackTargetKind.Creature, target.InstanceId))) &&
                     Mathf.Abs(delta.y) > 14)
                 { _portraitDragging = true; PDrawAttackArrow(pos); }
                 else if (!_portraitDragging && Mathf.Abs(delta.x) > 10 && scroll != null)
@@ -477,6 +532,9 @@ namespace CardGame.Presentation
                 var scroll = target.Rect.GetComponentInParent<ScrollRect>();
                 if (scroll != null && !RectTransformUtility.RectangleContainsScreenPoint(scroll.viewport, screen)) continue;
                 if (!RectTransformUtility.RectangleContainsScreenPoint(target.Rect, screen)) continue;
+                if (!TutorialAllowsAttack(_portraitPressedCard,
+                    target.Kind == "creature" ? AttackTargetKind.Creature : AttackTargetKind.Player,
+                    target.Kind == "creature" ? target.Id : 0)) continue;
                 var check = _engine.ValidateAttack(_state, HumanId, _portraitPressedCard.InstanceId,
                     target.Kind == "creature" ? AttackTargetKind.Creature : AttackTargetKind.Player,
                     target.Kind == "creature" ? target.Id : 0);
@@ -502,6 +560,9 @@ namespace CardGame.Presentation
                 outline.effectDistance = item == target ? new Vector2(3, 3) : new Vector2(1, 1);
                 var canChoose = _engine.AttackerChoosesShields(_state, _portraitPressedCard, ComputerId);
                 var eligible = !(item.Kind == "shield" && !canChoose || item.Kind == "shieldzone" && canChoose) &&
+                    TutorialAllowsAttack(_portraitPressedCard,
+                        item.Kind == "creature" ? AttackTargetKind.Creature : AttackTargetKind.Player,
+                        item.Kind == "creature" ? item.Id : 0) &&
                     _engine.ValidateAttack(_state, HumanId, _portraitPressedCard.InstanceId,
                         item.Kind == "creature" ? AttackTargetKind.Creature : AttackTargetKind.Player,
                         item.Kind == "creature" ? item.Id : 0).Success;
@@ -521,6 +582,8 @@ namespace CardGame.Presentation
         {
             var id = card.InstanceId;
             var kind = target.Kind == "creature" ? AttackTargetKind.Creature : AttackTargetKind.Player;
+            if (!TutorialGuard(kind == AttackTargetKind.Player ? TutorialAction.AttackPlayer :
+                TutorialAction.AttackCreature, id, target.Kind == "creature" ? target.Id : 0)) return;
             QueueAction((engine, state) => engine.DeclareAttack(state, HumanId, id, kind,
                 target.Kind == "creature" ? target.Id : 0, target.Kind == "shield" ? target.Id : 0), result =>
             {
@@ -541,6 +604,7 @@ namespace CardGame.Presentation
         {
             if (cards.Count == 0) return;
             _portraitPreview = cards.ToList(); _portraitPreviewIndex = Mathf.Clamp(index, 0, cards.Count - 1);
+            _tutorial?.InspectCard(_state, _portraitPreview[_portraitPreviewIndex].InstanceId);
             _portraitPreviewZone = title; _portraitManualMana = _portraitRules = false;
             _portraitManaOffset = 1f;
             _portraitManaIds.Clear(); _portraitDirty = true;
@@ -573,10 +637,11 @@ namespace CardGame.Presentation
         private RectTransform PModal(string title, float top = .08f, float bottom = .92f, bool closable = true,
             float dim = .88f, bool solid = true)
         {
+            if (_tutorial != null) top = Mathf.Max(top, (64 + TutorialCoachHeight + 8) / _ph);
             PBox(_portraitOverlay, "Dim board", new Rect(0, 0, _pw, _ph), new Color(.01f, .025f, .04f, dim));
             var panel = PBox(_portraitOverlay, title, new Rect(14, _ph * top, _pw - 28, _ph * (bottom - top)),
                 solid ? PPanel : new Color(0, 0, 0, 0)).rectTransform;
-            PLabel(panel, new Rect(20, 14, _pw - 130, 46), title, 23, PGold, TextAnchor.MiddleLeft);
+            PLabel(panel, new Rect(90, 8, _pw - 208, 56), title, 23, PGold);
             if (closable) PButton(panel, new Rect(_pw - 118, 8, 76, 64), "X", PClosePreview);
             return panel;
         }
@@ -595,14 +660,14 @@ namespace CardGame.Presentation
                 var available = panel.rect.height - 190;
                 var scroll = PScroll(panel, new Rect(18, 82, w - 36, available), false,
                     Mathf.Max(available, PTextHeight(ruleText, 25, w - 74) + 24));
-                PLabel(scroll.content, new Rect(10, 4, w - 74, scroll.content.sizeDelta.y - 8), ruleText, 25, Color.white, TextAnchor.UpperLeft);
+                PLabel(scroll.content, new Rect(10, 4, w - 74, scroll.content.sizeDelta.y - 8), ruleText, 25, Color.white);
                 PButton(panel, new Rect(20, panel.rect.height - 92, w - 40, 76), "BACK TO CARD", () => { _portraitRules = false; _portraitDirty = true; });
                 return;
             }
             if (_portraitManualMana) { PManualPayment(panel, card, 82); return; }
-            var height = _ph * .50f;
-            var cardTop = _ph * .23f;
-            var cardWidth = Mathf.Min(w - 176, height * .70f);
+            var cardTop = _tutorial == null ? _ph * .23f : 180f;
+            var height = _tutorial == null ? _ph * .50f : Mathf.Min(_ph * .40f, panel.rect.height - cardTop - 210);
+            var cardWidth = Mathf.Min(w - 176, height * (_tutorial == null ? .70f : 491f / 682f));
             var art = PCard(panel, card, new Rect((w - cardWidth) / 2, cardTop, cardWidth, height));
             var pointer = art.gameObject.AddComponent<PortraitPointer>();
             pointer.LogicalScale = _portraitCanvas.scaleFactor;
@@ -651,17 +716,20 @@ namespace CardGame.Presentation
                 var enough = _engine.ValidatePayment(_state, HumanId, card, ids).Success;
                 var legalBase = card.Definition.Type != CardType.EvolutionCreature || _engine.GetEvolutionBaseCandidates(_state, HumanId, card.InstanceId).Count > 0;
                 PButton(panel, new Rect(20, y, (width - 12) * .5f, 84), card.Definition.Type == CardType.Spell ? "CAST SPELL" : "SUMMON",
-                    () => PPlayCard(card, ids), PCanAct && enough && legalBase, PGold);
+                    () => PPlayCard(card, ids), PCanAct && enough && legalBase &&
+                    TutorialAllows(TutorialAction.PlayCard, card.InstanceId), PGold);
                 PButton(panel, new Rect(26 + width * .5f, y, (width - 12) * .5f, 84), "CHARGE MANA", () =>
                 {
+                    if (!TutorialGuard(TutorialAction.ChargeMana, card.InstanceId)) return;
                     PClosePreview(); QueueAction((e, s) => e.ChargeMana(s, HumanId, card.InstanceId), r => ShowResult(r, r.Success ? "Charged " + card.Definition.Name + "." : null));
-                }, PCanAct && !_state.ManaChargedThisTurn && !_state.MainActionTakenThisTurn);
+                }, PCanAct && !_state.ManaChargedThisTurn && !_state.MainActionTakenThisTurn &&
+                    TutorialAllows(TutorialAction.ChargeMana, card.InstanceId));
                 y += 94;
                 PAction(panel, ref y, "CHOOSE MANA MANUALLY  ·  " + ids.Count + " AUTO-SELECTED", () =>
                 {
                     _portraitManaIds.Clear(); foreach (var id in ids) _portraitManaIds.Add(id);
                     _portraitPaymentCard = card.InstanceId; _portraitManualMana = true; _portraitDirty = true;
-                }, PCanAct);
+                }, PCanAct && TutorialAllows(TutorialAction.PlayCard, card.InstanceId));
                 if (!enough || !legalBase)
                 {
                     PLabel(panel, new Rect(20, y, width, 38), !legalBase ? "No legal evolution base is available." : "Not enough matching, untapped mana.", 17, new Color(.95f, .65f, .43f)); y += 42;
@@ -673,8 +741,13 @@ namespace CardGame.Presentation
                     PAction(panel, ref y, "USE TAP ABILITY", () =>
                     {
                         PClosePreview(); QueueAction((e, s) => e.UseTapAbility(s, HumanId, card.InstanceId), r => ShowResult(r));
-                    }, PCanAct && _engine.ValidateTapAbility(_state, HumanId, card.InstanceId).Success, PCyan);
-                PLabel(panel, new Rect(20, y, width, 44), "Close this card, then drag it onto a legal target to attack.", 17, new Color(.70f, .82f, .85f)); y += 48;
+                    }, PCanAct && _engine.ValidateTapAbility(_state, HumanId, card.InstanceId).Success &&
+                        TutorialAllows(TutorialAction.TapAbility, card.InstanceId), PCyan);
+                var sickness = _tutorial?.Step == TutorialStep.SummoningSickness && card.InstanceId == _tutorial.FocusCardId;
+                PLabel(panel, new Rect(20, y, width, sickness ? 72 : 44),
+                    sickness ? "SUMMONING SICKNESS: Vorg cannot attack this turn. Tap NEXT in the tutorial coach." :
+                        "Close this card, then drag it onto a legal target to attack.",
+                    sickness ? 21 : 17, sickness ? PGold : new Color(.70f, .82f, .85f)); y += sickness ? 80 : 48;
             }
             if (card.EvolutionMaterials.Count > 0)
                 PAction(panel, ref y, "VIEW " + PCountMaterials(card) + " CARDS UNDER THIS EVOLUTION", () =>
@@ -693,6 +766,7 @@ namespace CardGame.Presentation
         private void PPlayCard(CardInstance card, IReadOnlyCollection<long> mana)
         {
             var id = card.InstanceId; var spell = card.Definition.Type == CardType.Spell;
+            if (!TutorialGuard(TutorialAction.PlayCard, id)) return;
             PClosePreview();
             QueueAction((e, s) => spell ? e.CastSpell(s, HumanId, id, mana) : e.SummonCreatureWithChoices(s, HumanId, id, mana),
                 r => ShowResult(r, r.Success ? "Played " + card.Definition.Name + "." : null));
@@ -717,7 +791,8 @@ namespace CardGame.Presentation
                     _portraitManaIds.Contains(mana.InstanceId) ? PGold : PPanel);
             }
             PButton(panel, new Rect(20, panel.rect.height - 100, _pw - 68, 44), "CONFIRM PAYMENT & PLAY",
-                () => PPlayCard(card, _portraitManaIds.ToArray()), valid.Success, PGold);
+                () => PPlayCard(card, _portraitManaIds.ToArray()), valid.Success && PCanAct &&
+                    TutorialAllows(TutorialAction.PlayCard, card.InstanceId), PGold);
             PButton(panel, new Rect(20, panel.rect.height - 50, _pw - 68, 40), "BACK", () => { _portraitManualMana = false; _portraitDirty = true; });
         }
 
@@ -752,12 +827,12 @@ namespace CardGame.Presentation
             scroll.verticalNormalizedPosition = _portraitChoiceOffset;
             scroll.onValueChanged.AddListener(v => _portraitChoiceOffset = v.y);
             var content = scroll.content;
-            PLabel(content, new Rect(10, 0, _pw - 100, promptHeight), prompt, 20, Color.white, TextAnchor.UpperLeft);
+            PLabel(content, new Rect(10, 0, _pw - 100, promptHeight), prompt, 20, Color.white);
             var y = promptHeight;
             foreach (var card in revealed)
             {
                 PCard(content, card, new Rect(10, y, 72, 100));
-                PLabel(content, new Rect(96, y, _pw - 190, 108), card.Definition.Name + "\n" + card.Definition.RulesText, 17, Color.white, TextAnchor.UpperLeft); y += 118;
+                PLabel(content, new Rect(96, y, _pw - 190, 108), card.Definition.Name + "\n" + card.Definition.RulesText, 17, Color.white); y += 118;
             }
             for (var i = 0; i < heights.Length; i++)
             {
@@ -778,7 +853,7 @@ namespace CardGame.Presentation
                         }
                         _portraitDirty = true;
                     }, true, selectedIndex >= 0 ? PGold : new Color(.13f, .25f, .31f));
-                var text = button.GetComponentInChildren<Text>(); text.alignment = TextAnchor.MiddleLeft; text.fontSize = 23;
+                var text = button.GetComponentInChildren<Text>(); text.fontSize = 23;
                 if (cards)
                 {
                     // CardLabels already encode hidden-zone permissions. Never
@@ -824,57 +899,21 @@ namespace CardGame.Presentation
                 () => ResolveHumanBlock(0), !required, PGold);
         }
 
-        private void PSetup()
-        {
-            PLabel(_portraitBoard, new Rect(20, 30, _pw - 40, 58), "DUEL MASTERS", 38, PGold);
-            PLabel(_portraitBoard, new Rect(28, 92, _pw - 56, 60), "Choose card pools for this duel. Each deck contains 40 cards.", 21, Color.white);
-            var scroll = PScroll(_portraitBoard, new Rect(20, 166, _pw - 40, _ph - 346), false, 1360f);
-            var y = 0f;
-            foreach (var owner in new[] { HumanId, ComputerId })
-            {
-                var sets = owner == HumanId ? _humanSelectedSets : _computerSelectedSets;
-                var civs = owner == HumanId ? _humanSelectedCivilizations : _computerSelectedCivilizations;
-                PLabel(scroll.content, new Rect(8, y, _pw - 80, 40), owner == HumanId ? "YOUR DECK" : "OPPONENT DECK", 25, PGold, TextAnchor.MiddleLeft); y += 50;
-                for (var i = 0; i < SelectableSetCodes.Length; i++)
-                {
-                    var set = SelectableSetCodes[i]; var column = i % 4; var row = i / 4;
-                    PButton(scroll.content, new Rect(8 + column * ((_pw - 100) / 4 + 5), y + row * 78, (_pw - 100) / 4, 70),
-                        (sets.Contains(set) ? "✓ " : "") + set,
-                        () => { if (!sets.Remove(set)) sets.Add(set); _portraitDirty = true; }, true, sets.Contains(set) ? new Color(.30f, .43f, .37f) : PPanel);
-                }
-                y += 324;
-                PButton(scroll.content, new Rect(8, y, _pw - 84, 66), "ALL SETS", () => { foreach (var set in SelectableSetCodes) sets.Add(set); _portraitDirty = true; }); y += 78;
-                for (var i = 0; i < SelectableCivilizations.Length; i++)
-                {
-                    var civ = SelectableCivilizations[i];
-                    PButton(scroll.content, new Rect(8 + i % 3 * ((_pw - 100) / 3 + 5), y + i / 3 * 76, (_pw - 100) / 3, 68),
-                        (civs.Contains(civ) ? "✓ " : "") + civ,
-                        () => { if (!civs.Remove(civ)) civs.Add(civ); _portraitDirty = true; }, true, civs.Contains(civ) ? new Color(.30f, .43f, .37f) : PPanel);
-                }
-                y += 174;
-            }
-            scroll.content.sizeDelta = new Vector2(scroll.content.sizeDelta.x, Mathf.Max(scroll.viewport.rect.height, y + 12));
-            // Selections rebuild this view. Restore its position after sizing the
-            // content, and retain subsequent scrolling for the next rebuild.
-            scroll.verticalNormalizedPosition = _portraitSetupOffset;
-            scroll.onValueChanged.AddListener(v => _portraitSetupOffset = v.y);
-
-            // Keep the action outside the scrolling content and inside the safe area.
-            var footer = PBox(_portraitBoard, "Deck setup footer", new Rect(8, _ph - 164, _pw - 16, 156), PPanel).rectTransform;
-            PLabel(footer, new Rect(20, 8, _pw - 56, 62), _setupMessage, 18, new Color(.72f, .83f, .86f));
-            PButton(footer, new Rect(20, 82, _pw - 56, 60), "START DUEL", () => { PClosePreview(); StartSelectedMatch(); _portraitDirty = true; }, true, PGold);
-        }
+        private void PSetup() => PDeckScreen();
 
         private void PMenu()
         {
             var panel = PModal("DUEL MENU", .22f, .78f);
             var y = 86f;
             PAction(panel, ref y, "RETURN TO DUEL", PClosePreview);
-            PAction(panel, ref y, "ATTACK VIDEOS · " + (_animationsEnabled ? "ON" : "OFF"), () => { _animationsEnabled = !_animationsEnabled; _portraitDirty = true; });
+            if (_tutorial == null)
+                PAction(panel, ref y, "ATTACK VIDEOS · " + (_animationsEnabled ? "ON" : "OFF"), () => { _animationsEnabled = !_animationsEnabled; _portraitDirty = true; });
+            else PAction(panel, ref y, "RESTART TUTORIAL", StartTutorial);
             PAction(panel, ref y, "HOW TO PLAY", () => { _portraitModal = "help"; _portraitDirty = true; });
             if (_portraitModal == "help")
-                PLabel(panel, new Rect(20, y, _pw - 68, 180), "Tap a hand card to inspect it. Hold and slide across your hand to choose a card.\n\nDrag a ready creature to a legal target. Release elsewhere to cancel. Tap mana or graveyard to inspect it.", 20, Color.white, TextAnchor.UpperLeft);
-            else PAction(panel, ref y, "NEW DUEL / CHANGE CARD POOLS", () => { PClosePreview(); ReturnToDeckSetup(); _portraitDirty = true; });
+                PLabel(panel, new Rect(20, y, _pw - 68, 180), "Tap a hand card to inspect it. Hold and slide across your hand to choose a card.\n\nDrag a ready creature to a legal target. Release elsewhere to cancel. Tap mana or graveyard to inspect it.", 20, Color.white);
+            else PAction(panel, ref y, _tutorial == null ? "MAIN MENU / NEW GAME" : "EXIT TUTORIAL",
+                () => { PClosePreview(); ReturnToDeckSetup(); _portraitDirty = true; });
         }
 
         private void PVideo()
@@ -896,6 +935,7 @@ namespace CardGame.Presentation
 
         private void PWinner()
         {
+            if (_tutorial != null) { PTutorialWinner(); return; }
             var panel = PModal(_state.WinnerPlayerId == HumanId ? "VICTORY" : "DEFEAT", .28f, .72f, false);
             PLabel(panel, new Rect(20, 100, _pw - 68, 100), _state.WinReason, 25, Color.white);
             PButton(panel, new Rect(20, panel.rect.height - 82, _pw - 68, 58), "NEW DUEL", () => { PClosePreview(); ReturnToDeckSetup(); _portraitDirty = true; }, true, PGold);
@@ -920,8 +960,7 @@ namespace CardGame.Presentation
             image.sprite = _portraitRound; image.type = Image.Type.Sliced; image.color = color;
             return image;
         }
-        private Text PLabel(Transform parent, Rect area, string text, int size, Color color,
-            TextAnchor alignment = TextAnchor.MiddleCenter, bool backing = false)
+        private Text PLabel(Transform parent, Rect area, string text, int size, Color color, bool backing = false)
         {
             if (backing)
             {
@@ -931,7 +970,13 @@ namespace CardGame.Presentation
             }
             var rect = PRect(parent, "Label", area);
             var label = rect.gameObject.AddComponent<Text>(); label.font = _portraitFont;
-            label.fontSize = size; label.text = text; label.color = color; label.alignment = alignment;
+            label.fontSize = size; label.text = text; label.color = color; label.alignment = TextAnchor.MiddleCenter;
+            if (backing)
+            {
+                // The legacy font's line height can exceed a badge at native phone scales.
+                label.resizeTextForBestFit = true;
+                label.resizeTextMinSize = Mathf.Min(size, 12); label.resizeTextMaxSize = size;
+            }
             label.supportRichText = false; label.raycastTarget = false;
             label.horizontalOverflow = HorizontalWrapMode.Wrap; label.verticalOverflow = VerticalWrapMode.Truncate;
             return label;
@@ -960,7 +1005,7 @@ namespace CardGame.Presentation
         private float PTextHeight(string text, int size, float width)
         {
             var settings = new TextGenerationSettings { font = _portraitFont, fontSize = size, lineSpacing = 1f,
-                generationExtents = new Vector2(width, 0), textAnchor = TextAnchor.UpperLeft,
+                generationExtents = new Vector2(width, 0), textAnchor = TextAnchor.MiddleCenter,
                 horizontalOverflow = HorizontalWrapMode.Wrap, verticalOverflow = VerticalWrapMode.Overflow,
                 scaleFactor = 1f, color = Color.white, fontStyle = FontStyle.Normal, richText = false };
             return new TextGenerator().GetPreferredHeight(text ?? "", settings);

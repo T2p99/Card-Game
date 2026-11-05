@@ -157,6 +157,7 @@ namespace CardGame.Core
         }
 
         private readonly IAbilityDecisionProvider _decisions;
+        private readonly Action<RuleTraceEntry> _trace;
         private readonly HashSet<CardInstance> _powerEvaluation = new HashSet<CardInstance>();
         private readonly HashSet<CardInstance> _survivorEvaluation =
             new HashSet<CardInstance>();
@@ -172,9 +173,14 @@ namespace CardGame.Core
         private CardInstance _preferredSelectionSource;
         private long _preferredSelectionInstanceId;
 
-        public AbilityResolver(IAbilityDecisionProvider decisions = null)
+        public AbilityResolver(IAbilityDecisionProvider decisions = null) : this(decisions, null)
+        {
+        }
+
+        public AbilityResolver(IAbilityDecisionProvider decisions, Action<RuleTraceEntry> trace)
         {
             _decisions = decisions ?? new DeterministicAbilityDecisionProvider();
+            _trace = trace;
         }
 
         public void Resolve(GameState state, CardInstance source, AbilityTiming timing)
@@ -2156,6 +2162,8 @@ namespace CardGame.Core
         private int ResolveOne(GameState state, CardInstance source, int ownerId,
             RuleAbilityDefinition ability, int previousCount)
         {
+            if (_trace != null)
+                _trace(RuleTraceEntry.ForAbility("Ability", ownerId, source, ability));
             var owner = state.Players[ownerId];
             var opponent = state.Players[1 - ownerId];
             var amount = ability.UsePreviousSelectionCountAsAmount ? previousCount : ability.Amount;
@@ -2642,6 +2650,12 @@ namespace CardGame.Core
         private int ApplySelected(GameState state, CardInstance source, int ownerId,
             RuleAbilityDefinition ability, IReadOnlyList<CardInstance> selected, PlayerState shuffleOwner)
         {
+            if (_trace != null)
+            {
+                var entry = RuleTraceEntry.ForAbility("Selection", ownerId, source, ability);
+                entry.SelectedInstanceIds = selected.Select(card => card.InstanceId).ToArray();
+                _trace(entry);
+            }
             var abilityOwner = state.Players[ownerId];
             state.LastRuleSelection.Clear();
             state.LastRuleSelection.AddRange(selected);
@@ -3435,6 +3449,19 @@ namespace CardGame.Core
         private DestructionOutcome ApplyDestructionPlan(GameState state, DestructionPlan plan,
             ISet<CardInstance> destroyedAsReplacement)
         {
+            var outcome = ApplyDestructionPlanCore(state, plan, destroyedAsReplacement);
+            if (_trace != null && plan?.Card != null)
+            {
+                var entry = RuleTraceEntry.ForCard("Destruction", plan.OwnerId, plan.Card);
+                entry.Detail = outcome.ToString();
+                _trace(entry);
+            }
+            return outcome;
+        }
+
+        private DestructionOutcome ApplyDestructionPlanCore(GameState state, DestructionPlan plan,
+            ISet<CardInstance> destroyedAsReplacement)
+        {
             if (state == null || plan == null || plan.Card == null || plan.OwnerId < 0)
                 return DestructionOutcome.Invalid;
             if (!state.Players[plan.OwnerId].BattleZone.Contains(plan.Card))
@@ -3599,6 +3626,8 @@ namespace CardGame.Core
             var ownerId = FindOwnerId(state, card);
             if (ownerId < 0) return false;
             var player = state.Players[ownerId];
+            var fromZone = _trace == null ? RuleZone.None : Enum.GetValues(typeof(RuleZone))
+                .Cast<RuleZone>().FirstOrDefault(zone => Zone(player, zone).Contains(card));
             var leavingBattleZone = player.BattleZone.Contains(card) && destination != RuleZone.BattleZone;
             var leavingManaZone = player.Mana.Contains(card) && destination == RuleZone.Graveyard;
             var leavingDeck = player.Deck.Contains(card) && destination != RuleZone.Deck;
@@ -3675,6 +3704,22 @@ namespace CardGame.Core
                 foreach (var material in materials)
                     AddToZone(player, material, destination);
                 AddToZone(player, card, destination);
+            }
+            if (_trace != null)
+            {
+                var entry = RuleTraceEntry.ForCard("Move", ownerId, card);
+                entry.FromZone = fromZone.ToString();
+                entry.ToZone = destination.ToString();
+                entry.CausedByPlayerId = causedByPlayerId;
+                _trace(entry);
+                foreach (var material in materials)
+                {
+                    var materialEntry = RuleTraceEntry.ForCard("Move", ownerId, material);
+                    materialEntry.FromZone = "EvolutionMaterials";
+                    materialEntry.ToZone = destination.ToString();
+                    materialEntry.CausedByPlayerId = causedByPlayerId;
+                    _trace(materialEntry);
+                }
             }
             if (leavingDeck && player.Deck.Count == 0)
             {
